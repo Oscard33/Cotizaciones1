@@ -1,0 +1,2445 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Suministros Electric Oz - Sistema de Cotizaciones, Ventas y SUNAT</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- jsPDF directo con respaldo automático -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"
+            onerror="var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js';document.head.appendChild(s);"></script>
+    <!-- SheetJS para importar/exportar Excel (.xlsx) directamente -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <style>
+        @media print {
+            .no-print { display: none !important; }
+        }
+        .scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+        .scrollbar-thin::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 9999px; }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800 font-sans min-h-screen flex flex-col">
+
+    <!-- Header -->
+    <header class="bg-slate-900 text-white shadow-md sticky top-0 z-30">
+        <div class="max-w-[1440px] mx-auto px-4 py-3 flex flex-wrap justify-between items-center gap-3">
+            <div class="flex items-center space-x-3">
+                <div class="bg-amber-500 text-slate-900 font-bold p-2.5 rounded-lg shadow">
+                    <i class="fa-solid fa-bolt text-xl"></i>
+                </div>
+                <div>
+                    <h1 class="text-lg sm:text-xl font-bold tracking-tight">Suministros Electric Oz — Cotizador y Gestión</h1>
+                    <p class="text-xs text-slate-400">
+                        <span id="headerTotalProductos">0</span> productos | <span id="headerTotalClientes">0</span> clientes guardados | Base: <strong>Precio 2</strong>
+                    </p>
+                </div>
+            </div>
+
+            <div class="flex flex-wrap items-center gap-2 text-xs">
+                <span id="badgeEstadoApi" class="bg-emerald-900/70 text-emerald-300 border border-emerald-700 px-3 py-1.5 rounded-full flex items-center gap-1.5">
+                    <i class="fa-solid fa-database"></i>
+                    <span id="textoEstadoApi">BD Local Activa</span>
+                </span>
+
+                <span id="badgeEstadoSunat" class="bg-slate-800 text-amber-300 border border-slate-700 px-3 py-1.5 rounded-full flex items-center gap-1.5">
+                    <i class="fa-solid fa-file-invoice"></i>
+                    <span id="textoEstadoSunat">SUNAT: Sin URL</span>
+                </span>
+
+                <label class="bg-slate-800 hover:bg-slate-700 text-amber-400 border border-slate-700 px-3 py-1.5 rounded-lg font-medium cursor-pointer transition flex items-center gap-1.5" title="Sube tu logotipo (opcional). Si no hay logo, la proforma usa todo el ancho sin dejar espacios vacíos.">
+                    <i class="fa-solid fa-image"></i>
+                    <span id="lblEstadoLogo">Subir Logo</span>
+                    <input type="file" id="inputLogoFile" accept="image/png,image/jpeg,image/webp" class="hidden" onchange="subirLogotipo(event)">
+                </label>
+                <button id="btnQuitarLogo" onclick="quitarLogotipo()" class="hidden bg-red-900/60 hover:bg-red-800 text-red-200 border border-red-700 px-2 py-1.5 rounded-lg text-xs" title="Quitar logo">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+
+                <button onclick="abrirModalApi()" class="bg-slate-800 hover:bg-slate-700 text-amber-400 border border-slate-700 px-3 py-1.5 rounded-lg font-medium transition">
+                    <i class="fa-solid fa-plug mr-1"></i> Configurar API BD / SUNAT
+                </button>
+
+                <label class="bg-amber-600 hover:bg-amber-700 text-white px-3 py-1.5 rounded-lg font-medium cursor-pointer transition shadow-sm">
+                    <i class="fa-solid fa-file-excel mr-1"></i> Importar Excel (.xlsx)
+                    <input type="file" id="inputExcelFile" accept=".xlsx,.xls,.csv" class="hidden" onchange="importarDesdeExcel(event)">
+                </label>
+
+                <button onclick="exportarExcelActualizado()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-3 py-1.5 rounded-lg font-medium transition" title="Descargar catálogo y clientes guardados">
+                    <i class="fa-solid fa-download mr-1"></i> Exportar BD
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="max-w-[1440px] mx-auto px-4 py-5 flex-grow w-full grid grid-cols-1 xl:grid-cols-12 gap-5">
+
+        <!-- COLUMNA IZQUIERDA (7 cols): Datos Cliente/Cotización + Recuadro Edición + Catálogo -->
+        <div class="xl:col-span-7 space-y-5">
+
+            <!-- 1. DATOS DEL EMISOR, CLIENTE -->
+            <section class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+                <div class="flex flex-wrap justify-between items-center gap-2 border-b border-slate-100 pb-2.5 mb-3">
+                    <h2 class="font-bold text-slate-800 text-sm uppercase tracking-wider flex items-center gap-2">
+                        <i class="fa-solid fa-address-card text-amber-500"></i> Datos del Cliente y Cotización
+                    </h2>
+                    <div class="flex flex-wrap items-center gap-2">
+                        <span id="badgeClienteEncontrado" class="hidden text-[11px] bg-emerald-100 text-emerald-800 border border-emerald-300 px-2.5 py-0.5 rounded-full font-semibold">
+                            <i class="fa-solid fa-check-circle mr-1"></i> Cliente guardado cargado
+                        </span>
+                        <button type="button" onclick="guardarClienteActual(true)"
+                                class="px-2.5 py-1 text-xs bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-medium shadow-sm transition"
+                                title="Guardar datos de este cliente para futuras cotizaciones">
+                            <i class="fa-solid fa-user-plus mr-1"></i> Guardar Cliente
+                        </button>
+                        <button type="button" onclick="limpiarDatosCliente()"
+                                class="px-2 py-1 text-xs bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg"
+                                title="Limpiar campos del cliente para uno nuevo">
+                            Limpiar
+                        </button>
+                        <div class="flex items-center gap-1.5 ml-1">
+                            <span class="text-xs text-slate-500">Cotización N°:</span>
+                            <input type="text" id="inputNumeroCot" value="COT-00001" oninput="localStorage.setItem('oz_siguiente_num_cot', this.value.trim())" onblur="this.value = formatearNumeroCotizacion(this.value); localStorage.setItem('oz_siguiente_num_cot', this.value)" class="w-28 px-2 py-1 text-xs font-mono font-bold text-center bg-amber-50 border border-amber-300 rounded focus:outline-none focus:ring-2 focus:ring-amber-500">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-12 gap-3 text-xs">
+                    <!-- Emisor -->
+                    <div class="sm:col-span-5">
+                        <label class="block font-semibold text-slate-600 mb-1">Emisor / Empresa:</label>
+                        <input type="text" id="inputRazonSocialEmisor" value="PAEZ HERRERA OSCAR HERNAN - Suministros Electric Oz"
+                               class="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none">
+                    </div>
+                    <div class="sm:col-span-3">
+                        <label class="block font-semibold text-slate-600 mb-1">RUC Emisor:</label>
+                        <input type="text" id="inputRucEmisor" value="15615084279"
+                               class="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg font-mono focus:ring-2 focus:ring-amber-500 focus:outline-none">
+                    </div>
+                    <div class="sm:col-span-4">
+                        <label class="block font-semibold text-slate-600 mb-1">Teléf. Vendedor:</label>
+                        <input type="text" id="inputTelEmisor" value="968047414"
+                               class="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none">
+                    </div>
+
+                    <!-- RUC o DNI del Cliente -->
+                    <div class="sm:col-span-2">
+                        <label class="block font-semibold text-slate-700 mb-1">Tipo Doc.:</label>
+                        <select id="selectTipoDocCliente" onchange="validarDocCliente(); sincronizarComprobanteSugerido();"
+                                class="w-full px-2 py-1.5 bg-amber-50 border border-amber-300 rounded-lg font-semibold text-slate-800 focus:ring-2 focus:ring-amber-500 focus:outline-none">
+                            <option value="RUC">RUC</option>
+                            <option value="DNI">DNI</option>
+                            <option value="S/D">S/D</option>
+                        </select>
+                    </div>
+                    <div class="sm:col-span-4 relative">
+                        <label class="block font-semibold text-slate-700 mb-1">
+                            RUC / DNI Cliente <span class="text-[10px] font-normal text-amber-700">(autocompleta guardados)</span>:
+                        </label>
+                        <div class="relative">
+                            <input type="text" id="inputDocCliente" placeholder="Escribe RUC o DNI..."
+                                   autocomplete="off"
+                                   oninput="onInputDocCliente(this.value); sincronizarComprobanteSugerido();"
+                                   onfocus="onInputDocCliente(this.value)"
+                                   class="w-full pl-2.5 pr-7 py-1.5 bg-white border-2 border-amber-300 rounded-lg font-mono font-semibold focus:ring-2 focus:ring-amber-500 focus:outline-none">
+                            <span class="absolute inset-y-0 right-0 pr-2 flex items-center pointer-events-none text-amber-500">
+                                <i class="fa-solid fa-magnifying-glass text-[11px]"></i>
+                            </span>
+                        </div>
+                        <span id="msgDocCliente" class="text-[10px] text-slate-400"></span>
+
+                        <div id="dropdownSugerenciasCliente"
+                             class="hidden absolute left-0 right-0 top-full mt-1 bg-white border-2 border-amber-400 rounded-lg shadow-xl z-40 max-h-56 overflow-y-auto scrollbar-thin">
+                        </div>
+                    </div>
+                    <div class="sm:col-span-6 relative">
+                        <label class="block font-semibold text-slate-700 mb-1">Señores / Razón Social o Nombre:</label>
+                        <input type="text" id="inputCliente" placeholder="CLIENTE OCASIONAL o Razón Social"
+                               autocomplete="off"
+                               oninput="onInputNombreCliente(this.value)"
+                               class="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none">
+                        <div id="dropdownSugerenciasNombre"
+                             class="hidden absolute left-0 right-0 top-full mt-1 bg-white border-2 border-amber-400 rounded-lg shadow-xl z-40 max-h-56 overflow-y-auto scrollbar-thin">
+                        </div>
+                    </div>
+
+                    <!-- Dirección, Atención, Teléfono -->
+                    <div class="sm:col-span-5">
+                        <label class="block font-semibold text-slate-600 mb-1">Dirección:</label>
+                        <input type="text" id="inputDireccionCliente" placeholder="Dirección del cliente (opcional)"
+                               class="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none">
+                    </div>
+                    <div class="sm:col-span-4">
+                        <label class="block font-semibold text-slate-600 mb-1">Atención / Contacto:</label>
+                        <input type="text" id="inputAtencionCliente" placeholder="Nombre de contacto"
+                               class="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none">
+                    </div>
+                    <div class="sm:col-span-3">
+                        <label class="block font-semibold text-slate-600 mb-1">Teléfono Cliente:</label>
+                        <input type="text" id="inputTelefono" placeholder="Celular / Telf."
+                               class="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none">
+                    </div>
+
+                    <!-- Condiciones Comerciales -->
+                    <div class="sm:col-span-3">
+                        <label class="block font-semibold text-slate-600 mb-1">Moneda:</label>
+                        <select id="selectMoneda" onchange="actualizarCotizacion()" class="w-full px-2 py-1.5 bg-slate-50 border border-slate-300 rounded-lg">
+                            <option value="SOLES">SOLES (S/)</option>
+                            <option value="DOLARES">DÓLARES ($)</option>
+                        </select>
+                    </div>
+                    <div class="sm:col-span-3">
+                        <label class="block font-semibold text-slate-600 mb-1">Forma de Pago:</label>
+                        <input type="text" id="inputFormaPago" value="TRANSFERENCIA" class="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg">
+                    </div>
+                    <div class="sm:col-span-3">
+                        <label class="block font-semibold text-slate-600 mb-1">Entrega:</label>
+                        <input type="text" id="inputTiempoEntrega" value="INMEDIATO" class="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg">
+                    </div>
+                    <div class="sm:col-span-3">
+                        <label class="block font-semibold text-slate-600 mb-1">Validez Oferta:</label>
+                        <input type="text" id="inputValidez" value="3 DÍAS" class="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg">
+                    </div>
+                </div>
+            </section>
+
+            <!-- 2. RECUADRO APARTE EXCLUSIVO PARA MODIFICAR / ACTUALIZAR PRODUCTO EN BASE DE DATOS -->
+            <section id="recuadroEditorProducto" class="bg-amber-50/80 p-4 rounded-xl shadow-sm border-2 border-amber-300">
+                <div class="flex flex-wrap justify-between items-center gap-2 border-b border-amber-200 pb-2 mb-3">
+                    <h2 class="font-bold text-slate-900 text-sm uppercase tracking-wider flex items-center gap-2">
+                        <i class="fa-solid fa-pen-to-square text-amber-600"></i>
+                        Recuadro de Edición de Producto (Gestión Interna de Costos y Precios)
+                    </h2>
+                    <div class="flex items-center gap-2">
+                        <button type="button" onclick="prepararNuevoProducto()" class="text-xs bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 px-2.5 py-1 rounded-md font-medium">
+                            <i class="fa-solid fa-plus mr-1"></i> Nuevo Producto
+                        </button>
+                        <button type="button" onclick="limpiarEditorProducto()" class="text-xs text-slate-500 hover:text-slate-800 px-2 py-1">
+                            Limpiar
+                        </button>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-12 gap-3 text-xs">
+                    <input type="hidden" id="editOriginalId" value="">
+                    <div class="sm:col-span-3">
+                        <label class="block font-semibold text-slate-700 mb-1">Código:</label>
+                        <input type="text" id="editCodigo" placeholder="Ej. 1475"
+                               class="w-full px-2.5 py-1.5 bg-white border border-amber-300 rounded-lg font-mono focus:ring-2 focus:ring-amber-500 focus:outline-none">
+                    </div>
+                    <div class="sm:col-span-6">
+                        <label class="block font-semibold text-slate-700 mb-1">Descripción / Nombre Exacto:</label>
+                        <input type="text" id="editNombre" placeholder="Selecciona un producto abajo o escribe uno nuevo..."
+                               class="w-full px-2.5 py-1.5 bg-white border border-amber-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none">
+                    </div>
+                    <div class="sm:col-span-3">
+                        <label class="block font-semibold text-slate-700 mb-1">Marca:</label>
+                        <input type="text" id="editMarca" placeholder="Ej. INDECO"
+                               class="w-full px-2.5 py-1.5 bg-white border border-amber-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none">
+                    </div>
+
+                    <div class="sm:col-span-2">
+                        <label class="block font-semibold text-slate-700 mb-1">Unidad (UM):</label>
+                        <input type="text" id="editUm" value="UN" list="listaUnidades"
+                               class="w-full px-2.5 py-1.5 bg-white border border-amber-300 rounded-lg uppercase focus:ring-2 focus:ring-amber-500 focus:outline-none">
+                    </div>
+                    <div class="sm:col-span-3">
+                        <label class="block font-semibold text-blue-800 mb-1">P. Compra (Costo):</label>
+                        <input type="number" step="0.001" id="editCompra" placeholder="0.00" oninput="recalcularMargenEditor()"
+                               class="w-full px-2.5 py-1.5 bg-blue-50 border border-blue-300 rounded-lg font-mono font-bold text-blue-900 focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                    </div>
+                    <div class="sm:col-span-3">
+                        <label class="block font-semibold text-amber-800 mb-1">Precio 2 (Venta):</label>
+                        <input type="number" step="0.001" id="editPrecio2" placeholder="0.00" oninput="recalcularMargenEditor()"
+                               class="w-full px-2.5 py-1.5 bg-white border border-amber-400 rounded-lg font-mono font-bold text-amber-700 focus:ring-2 focus:ring-amber-500 focus:outline-none">
+                    </div>
+                    <div class="sm:col-span-4 flex flex-col justify-between">
+                        <label class="block font-semibold text-slate-700 mb-1">Rentabilidad Interna:</label>
+                        <div id="badgeMargenEditor" class="px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 font-mono text-center font-semibold text-slate-500">
+                            Utilidad: S/ 0.00 (0.0%)
+                        </div>
+                    </div>
+
+                    <div class="sm:col-span-12 flex flex-wrap justify-between items-center gap-2 pt-1">
+                        <label class="inline-flex items-center gap-1.5 text-slate-700 cursor-pointer">
+                            <input type="checkbox" id="chkActualizarEnCotizacion" checked class="rounded text-amber-600">
+                            <span>Actualizar también si este producto ya está en la cotización actual</span>
+                        </label>
+                        <button type="button" onclick="guardarProductoDesdeEditor()"
+                                class="bg-slate-900 hover:bg-amber-600 text-white font-semibold px-4 py-2 rounded-lg shadow transition flex items-center gap-1.5">
+                            <i class="fa-solid fa-floppy-disk"></i>
+                            <span>Guardar Cambios en Base de Datos / API</span>
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 3. BUSCADOR Y CATÁLOGO COMPLETO DE PRODUCTOS -->
+            <section class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                <div class="p-4 border-b border-slate-100 space-y-3 bg-slate-50/60">
+                    <div class="flex flex-wrap justify-between items-center gap-2">
+                        <h2 class="font-bold text-slate-800 text-sm uppercase tracking-wider">
+                            Catálogo de Productos (<span id="lblTotalCatalogo">0</span>)
+                        </h2>
+                        <div class="flex items-center gap-2 text-xs">
+                            <select id="filtroMarca" onchange="paginaActual=1; filtrarProductos()" class="px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg">
+                                <option value="">Todas las Marcas</option>
+                            </select>
+                            <span id="contadorResultados" class="font-medium text-slate-600 bg-slate-200/70 px-2.5 py-1 rounded-full">0 resultados</span>
+                        </div>
+                    </div>
+
+                    <div class="relative">
+                        <input type="text" id="searchBox" placeholder="Buscar por código, descripción o marca (ej. INDECO, N2XOH, SCHNEIDER, 3X40A)..."
+                               class="w-full pl-9 pr-20 py-2.5 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 text-sm"
+                               oninput="paginaActual=1; filtrarProductos()">
+                        <span class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                            <i class="fa-solid fa-magnifying-glass"></i>
+                        </span>
+                        <button onclick="document.getElementById('searchBox').value=''; paginaActual=1; filtrarProductos();"
+                                class="absolute inset-y-1.5 right-1.5 px-2.5 text-xs bg-slate-100 hover:bg-slate-200 text-slate-600 rounded">
+                            Limpiar
+                        </button>
+                    </div>
+                </div>
+
+                <div class="overflow-x-auto max-h-[540px] scrollbar-thin">
+                    <table class="w-full text-left border-collapse">
+                        <thead class="sticky top-0 z-10 bg-slate-100 text-slate-600 text-[11px] uppercase font-bold border-b border-slate-200">
+                            <tr>
+                                <th class="py-2.5 px-3">Código / Descripción / Marca</th>
+                                <th class="py-2.5 px-2 text-center">UM</th>
+                                <th class="py-2.5 px-2 text-right text-blue-700" title="Solo visible para gestión interna">P. Compra</th>
+                                <th class="py-2.5 px-2 text-right text-amber-700">Precio 2</th>
+                                <th class="py-2.5 px-2 text-right">Margen</th>
+                                <th class="py-2.5 px-3 text-center">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tablaProductos" class="divide-y divide-slate-100 text-xs">
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Paginación -->
+                <div class="px-4 py-2.5 bg-slate-50 border-t border-slate-200 flex flex-wrap justify-between items-center gap-2 text-xs">
+                    <span id="infoPaginacion" class="text-slate-500">Mostrando 0 - 0 de 0</span>
+                    <div class="flex items-center gap-1.5">
+                        <button onclick="cambiarPagina(-1)" id="btnPrevPage" class="px-3 py-1 bg-white border border-slate-300 rounded hover:bg-slate-100 disabled:opacity-40">Anterior</button>
+                        <span id="lblPaginaActual" class="px-2 font-semibold text-slate-700">Pág. 1</span>
+                        <button onclick="cambiarPagina(1)" id="btnNextPage" class="px-3 py-1 bg-white border border-slate-300 rounded hover:bg-slate-100 disabled:opacity-40">Siguiente</button>
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <!-- COLUMNA DERECHA (5 cols): COTIZACIÓN ACTUAL EDITABLE + EMISIÓN SUNAT -->
+        <div class="xl:col-span-5">
+            <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 sticky top-16 space-y-4">
+                <div class="flex flex-wrap justify-between items-center gap-2 border-b border-slate-200 pb-3">
+                    <div>
+                        <h2 class="font-bold text-slate-900 text-base flex items-center gap-2">
+                            <i class="fa-solid fa-file-invoice-dollar text-amber-500"></i> Cotización / Venta Actual
+                        </h2>
+                        <p class="text-[11px] text-slate-500">Edita descripción, UM, cantidad o precio antes de cotizar o emitir a SUNAT.</p>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button onclick="agregarItemManual()" class="text-xs bg-slate-800 hover:bg-slate-700 text-white px-2.5 py-1.5 rounded-lg font-medium">
+                            <i class="fa-solid fa-plus mr-1"></i> Ítem Manual
+                        </button>
+                        <button onclick="limpiarCotizacion()" class="text-xs text-red-600 hover:text-red-800 font-medium px-2 py-1">
+                            <i class="fa-solid fa-trash-can"></i> Vaciar
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Lista editable de productos agregados a la cotización -->
+                <div id="listaCotizacion" class="space-y-2.5 max-h-[390px] overflow-y-auto pr-1 scrollbar-thin">
+                    <p class="text-xs text-slate-400 text-center py-8">No hay productos agregados a la cotización.</p>
+                </div>
+
+                <!-- Panel de Gestión Interna (SOLO PANTALLA - NO SALE EN PDF CLIENTE) -->
+                <div class="bg-blue-50/80 border border-blue-200 rounded-lg p-3 text-xs space-y-1">
+                    <div class="font-bold text-blue-900 uppercase text-[11px] flex justify-between">
+                        <span><i class="fa-solid fa-chart-line mr-1"></i> Gestión Interna (No sale en PDF)</span>
+                        <span id="lblMargenPorcentaje" class="font-mono">0.0%</span>
+                    </div>
+                    <div class="flex justify-between text-blue-800">
+                        <span>Costo Total Compra:</span>
+                        <span id="lblCostoTotalInterno" class="font-mono font-semibold">S/ 0.00</span>
+                    </div>
+                    <div class="flex justify-between text-emerald-700 font-bold">
+                        <span>Ganancia Bruta Estimada:</span>
+                        <span id="lblGananciaInterna" class="font-mono">S/ 0.00</span>
+                    </div>
+                </div>
+
+                <!-- Totales de Cotización -->
+                <div class="border-t border-slate-200 pt-3 space-y-2 text-xs">
+                    <div class="flex justify-between items-center">
+                        <label class="inline-flex items-center gap-1.5 text-slate-600 cursor-pointer">
+                            <input type="checkbox" id="chkDesglosarIgv" onchange="actualizarCotizacion()" class="rounded text-amber-600">
+                            <span>Precios sin IGV (sumar IGV 18% aparte)</span>
+                        </label>
+                        <span class="text-slate-500">Ítems: <strong id="lblCantidadItems">0</strong></span>
+                    </div>
+
+                    <div id="rowSubtotal" class="hidden flex justify-between text-slate-600">
+                        <span>Subtotal (Base Imponible):</span>
+                        <span id="lblSubtotal" class="font-mono">S/ 0.00</span>
+                    </div>
+                    <div id="rowIgv" class="hidden flex justify-between text-slate-600">
+                        <span>IGV (18%):</span>
+                        <span id="lblIgv" class="font-mono">S/ 0.00</span>
+                    </div>
+                    <div class="flex justify-between text-base font-bold text-slate-900 border-t border-slate-200 pt-2">
+                        <span>TOTAL GENERAL:</span>
+                        <span id="lblTotal" class="text-amber-600 font-mono">S/ 0.00</span>
+                    </div>
+                </div>
+
+                <!-- Configurador rápido de Comprobante SUNAT -->
+                <div class="bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs space-y-2">
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                        <span class="font-bold text-slate-800 flex items-center gap-1.5">
+                            <i class="fa-solid fa-receipt text-indigo-600"></i> Emisión Electrónica SUNAT:
+                        </span>
+                        <div class="flex items-center gap-1.5">
+                            <select id="selectTipoComprobanteSunat" onchange="actualizarCorrelativoSunatUI()" class="px-2 py-1 bg-white border border-slate-300 rounded font-semibold text-xs">
+                                <option value="01">Factura (01)</option>
+                                <option value="03">Boleta (03)</option>
+                            </select>
+                            <input type="text" id="inputSerieSunat" value="F001" oninput="this.value=this.value.toUpperCase(); actualizarCorrelativoSunatUI();" class="w-16 px-2 py-1 bg-white border border-slate-300 rounded font-mono font-bold text-center text-xs">
+                            <span id="lblSiguienteCorrelativoSunat" class="font-mono text-[11px] bg-indigo-50 text-indigo-800 border border-indigo-200 px-2 py-0.5 rounded font-bold">#00000001</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Botones de Acción -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                    <button type="button" id="btnDescargarPdf" onclick="descargarPDFProfesional()" class="bg-amber-600 hover:bg-amber-700 text-white font-semibold py-2.5 px-3 rounded-lg shadow transition flex items-center justify-center gap-2 text-xs cursor-pointer">
+                        <i class="fa-solid fa-file-pdf text-base"></i>
+                        <span id="txtBtnDescargarPdf">Descargar PDF Cotización</span>
+                    </button>
+                    <button type="button" onclick="generarMensajeWhatsApp()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2.5 px-3 rounded-lg shadow transition flex items-center justify-center gap-2 text-xs cursor-pointer">
+                        <i class="fa-brands fa-whatsapp text-base"></i>
+                        <span>Enviar por WhatsApp</span>
+                    </button>
+                    <button type="button" id="btnEmitirSunat" onclick="emitirComprobanteSunatDesdeCotizador()" class="sm:col-span-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2.5 px-3 rounded-lg shadow transition flex items-center justify-center gap-2 text-xs cursor-pointer">
+                        <i class="fa-solid fa-paper-plane"></i>
+                        <span id="txtBtnEmitirSunat">Emitir a SUNAT (Factura / Boleta)</span>
+                    </button>
+                    <button type="button" onclick="guardarCotizacionEnApi()" class="sm:col-span-2 bg-slate-900 hover:bg-slate-800 text-white font-semibold py-2 px-3 rounded-lg transition flex items-center justify-center gap-2 text-xs cursor-pointer">
+                        <i class="fa-solid fa-cloud-arrow-up text-amber-400"></i>
+                        <span>Guardar Cotización en Base de Datos / API</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Datalist de Unidades Comunes -->
+    <datalist id="listaUnidades">
+        <option value="UN">
+        <option value="MT">
+        <option value="ROLLO">
+        <option value="PZA">
+        <option value="CJA">
+        <option value="PQT">
+        <option value="KG">
+        <option value="DOC">
+        <option value="MLL">
+        <option value="JGO">
+    </datalist>
+
+    <!-- MODAL CONFIGURACIÓN API BASE DE DATOS Y SUNAT -->
+    <div id="modalApi" class="fixed inset-0 bg-slate-900/60 hidden items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-xl shadow-xl max-w-lg w-full p-5 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div class="flex justify-between items-center border-b pb-2">
+                <h3 class="font-bold text-slate-900 text-base"><i class="fa-solid fa-server text-amber-500 mr-2"></i>Conexión API Base de Datos y SUNAT</h3>
+                <button onclick="cerrarModalApi()" class="text-slate-400 hover:text-slate-700"><i class="fa-solid fa-xmark text-lg"></i></button>
+            </div>
+            <p class="text-xs text-slate-600">
+                Configura tu API de base de datos (Google Apps Script / REST) y el endpoint de tu motor SUNAT (Greenter/Lycet o microservicio) alojado en Render, tu PC o servidor.
+            </p>
+            <div class="space-y-3 text-xs">
+                <div>
+                    <label class="block font-semibold text-slate-700 mb-1">URL Endpoint API Base de Datos:</label>
+                    <input type="url" id="inputApiUrl" placeholder="https://script.google.com/macros/s/.../exec o https://tu-api.com/api"
+                           class="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono">
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-700 mb-1">Token / API Key (Opcional):</label>
+                    <input type="text" id="inputApiToken" placeholder="Bearer token o clave secreta"
+                           class="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono">
+                </div>
+                <div class="border-t pt-3 space-y-2">
+                    <label class="block font-semibold text-indigo-900 mb-1">URL Motor / API Emisión SUNAT (POST JSON):</label>
+                    <input type="url" id="inputSunatApiUrl" placeholder="https://tu-facturador-sunat.onrender.com/index.php"
+                           class="w-full px-3 py-2 border border-indigo-300 bg-indigo-50/40 rounded-lg font-mono">
+                    <div class="flex items-center justify-between pt-1">
+                        <span class="text-slate-600 font-semibold">Entorno SUNAT:</span>
+                        <select id="selectEntornoSunat" class="px-2.5 py-1.5 border border-slate-300 rounded-lg font-semibold">
+                            <option value="BETA">BETA (Pruebas SUNAT)</option>
+                            <option value="PRODUCCION">PRODUCCIÓN (Comprobantes reales)</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            <div class="bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-2 text-xs">
+                <div class="font-semibold text-slate-700">Sincronización Masiva y Reinicio de Catálogo:</div>
+                <div class="flex flex-wrap gap-2">
+                    <button type="button" onclick="sincronizarDesdeApi(false)" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-3 py-1.5 rounded-lg">
+                        <i class="fa-solid fa-cloud-arrow-down mr-1"></i> Cargar desde API
+                    </button>
+                    <button type="button" onclick="subirCatalogoCompletoAApi()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-3 py-1.5 rounded-lg">
+                        <i class="fa-solid fa-cloud-arrow-up mr-1"></i> Subir Catálogo a API
+                    </button>
+                    <button type="button" onclick="vaciarCatalogoLocal()" class="bg-red-50 hover:bg-red-100 text-red-700 border border-red-300 font-semibold px-3 py-1.5 rounded-lg">
+                        <i class="fa-solid fa-trash-can mr-1"></i> Vaciar BD (Dejar en 0)
+                    </button>
+                </div>
+            </div>
+            <div class="flex justify-end gap-2 pt-2 border-t">
+                <button type="button" onclick="cerrarModalApi()" class="px-3 py-2 text-xs text-slate-600 hover:bg-slate-100 rounded-lg">Cancelar</button>
+                <button type="button" onclick="guardarConfigApi()" class="bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold px-4 py-2 rounded-lg">Guardar Configuración</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // =========================================================================
+        // 1. BASE DE DATOS INICIAL DE PRODUCTOS
+        // =========================================================================
+        const PRODUCTOS_INICIALES = [
+            {"id": "1475", "nombre": "TOMA EMPOTRABLE MENNEKES 2P+T 16A IP67 250V AZUL", "compra": 49.6, "precio2": 57.0, "categoria": "SIN CATEGORIA", "marca": "MENNEKES", "stock": 0.0, "um": "UN"},
+            {"id": "929002636410", "nombre": "CABLE DE COBRE ESMALTADO N° 18AWG INDECO", "compra": 1.5, "precio2": 3.0, "categoria": "SIN CATEGORIA", "marca": "INDECO", "stock": 7.0, "um": "UN"},
+            {"id": "929002636370", "nombre": "CABLE DESNUDO CU 35MM2 TEMPLE DURO INDECO", "compra": 26.78, "precio2": 28.5, "categoria": "SIN CATEGORIA", "marca": "INDECO", "stock": 300.0, "um": "UN"},
+            {"id": "929002636211", "nombre": "CABLE N2XOH 3-1X300MM2 INDECO", "compra": 494.0, "precio2": 588.0, "categoria": "CABLES", "marca": "INDECO", "stock": 0.0, "um": "MT"},
+            {"id": "EZ9F56340", "nombre": "LLAVE TERMOMAGNETICA 3X40A EZ SCHNEIDER", "compra": 62.0, "precio2": 75.0, "categoria": "LLAVES TERMICAS", "marca": "SCHNEIDER", "stock": 10.0, "um": "UN"},
+            {"id": "EZ9F56240", "nombre": "LLAVE TERMOMAGNETICA 2X40A EZ SCHNEIDER", "compra": 36.0, "precio2": 44.0, "categoria": "LLAVES TERMICAS", "marca": "SCHNEIDER", "stock": 10.0, "um": "UN"}
+        ];
+
+        let catalogo = [];
+        let clientesGuardados = [];
+        let resultadosFiltrados = [];
+        let cotizacion = [];
+        let paginaActual = 1;
+        const ITEMS_POR_PAGINA = 50;
+
+        // =========================================================================
+        // 2. CAPA DE PERSISTENCIA (IndexedDB + LocalStorage + API REST)
+        // =========================================================================
+        const DB_NAME = 'DistribucionOzDB';
+        const DB_VERSION = 3;
+        let dbInstance = null;
+
+        function abrirIndexedDB() {
+            return new Promise((resolve) => {
+                try {
+                    const request = indexedDB.open(DB_NAME, DB_VERSION);
+                    request.onupgradeneeded = (e) => {
+                        const db = e.target.result;
+                        if (!db.objectStoreNames.contains('productos')) {
+                            db.createObjectStore('productos', { keyPath: 'id' });
+                        }
+                        if (!db.objectStoreNames.contains('cotizaciones')) {
+                            db.createObjectStore('cotizaciones', { keyPath: 'numero' });
+                        }
+                        if (!db.objectStoreNames.contains('clientes')) {
+                            db.createObjectStore('clientes', { keyPath: 'key' });
+                        }
+                        if (!db.objectStoreNames.contains('comprobantes_sunat')) {
+                            db.createObjectStore('comprobantes_sunat', { keyPath: 'comprobanteId' });
+                        }
+                    };
+                    request.onsuccess = (e) => {
+                        dbInstance = e.target.result;
+                        resolve(dbInstance);
+                    };
+                    request.onerror = () => resolve(null);
+                } catch (e) {
+                    resolve(null);
+                }
+            });
+        }
+
+        async function cargarCatalogoDesdeDB() {
+            await abrirIndexedDB();
+            if (!dbInstance) return null;
+            return new Promise((resolve) => {
+                try {
+                    const tx = dbInstance.transaction('productos', 'readonly');
+                    const store = tx.objectStore('productos');
+                    const req = store.getAll();
+                    req.onsuccess = () => resolve(req.result && req.result.length > 0 ? req.result : null);
+                    req.onerror = () => resolve(null);
+                } catch (e) {
+                    resolve(null);
+                }
+            });
+        }
+
+        async function guardarCatalogoCompletoEnDB(lista) {
+            if (!dbInstance) await abrirIndexedDB();
+            if (!dbInstance) return false;
+            return new Promise((resolve) => {
+                try {
+                    const tx = dbInstance.transaction('productos', 'readwrite');
+                    const store = tx.objectStore('productos');
+                    store.clear();
+                    lista.forEach(item => store.put(item));
+                    tx.oncomplete = () => resolve(true);
+                    tx.onerror = () => resolve(false);
+                } catch (e) {
+                    resolve(false);
+                }
+            });
+        }
+
+        async function guardarUnProductoEnDB(producto) {
+            if (!dbInstance) await abrirIndexedDB();
+            if (!dbInstance) return false;
+            return new Promise((resolve) => {
+                try {
+                    const tx = dbInstance.transaction('productos', 'readwrite');
+                    const store = tx.objectStore('productos');
+                    store.put(producto);
+                    tx.oncomplete = () => resolve(true);
+                    tx.onerror = () => resolve(false);
+                } catch (e) {
+                    resolve(false);
+                }
+            });
+        }
+
+        // --- Persistencia y Búsqueda Instantánea de Clientes Cotizados ---
+        async function cargarClientesDesdeDB() {
+            if (!dbInstance) await abrirIndexedDB();
+            const backup = JSON.parse(localStorage.getItem('oz_clientes_backup') || '[]');
+            if (!dbInstance) return backup;
+
+            return new Promise((resolve) => {
+                try {
+                    const tx = dbInstance.transaction('clientes', 'readonly');
+                    const store = tx.objectStore('clientes');
+                    const req = store.getAll();
+                    req.onsuccess = () => {
+                        const desdeDb = req.result || [];
+                        resolve(desdeDb.length > 0 ? desdeDb : backup);
+                    };
+                    req.onerror = () => resolve(backup);
+                } catch (e) {
+                    resolve(backup);
+                }
+            });
+        }
+
+        async function guardarClienteEnDB(clienteObj) {
+            localStorage.setItem('oz_clientes_backup', JSON.stringify(clientesGuardados));
+            if (!dbInstance) await abrirIndexedDB();
+            if (!dbInstance) return false;
+            return new Promise((resolve) => {
+                try {
+                    const tx = dbInstance.transaction('clientes', 'readwrite');
+                    const store = tx.objectStore('clientes');
+                    store.put(clienteObj);
+                    tx.oncomplete = () => resolve(true);
+                    tx.onerror = () => resolve(false);
+                } catch (e) {
+                    resolve(false);
+                }
+            });
+        }
+
+        async function eliminarClienteGuardado(key, event) {
+            if (event) {
+                event.preventDefault();
+                event.stopPropagation();
+            }
+            clientesGuardados = clientesGuardados.filter(c => c.key !== key);
+            localStorage.setItem('oz_clientes_backup', JSON.stringify(clientesGuardados));
+            actualizarContadorClientes();
+            if (dbInstance) {
+                try {
+                    const tx = dbInstance.transaction('clientes', 'readwrite');
+                    tx.objectStore('clientes').delete(key);
+                } catch (e) {}
+            }
+            onInputDocCliente(document.getElementById('inputDocCliente').value);
+        }
+
+        function actualizarContadorClientes() {
+            const el = document.getElementById('headerTotalClientes');
+            if (el) el.innerText = clientesGuardados.length.toLocaleString();
+        }
+
+        async function guardarClienteActual(notificar = false) {
+            const tipoDoc = document.getElementById('selectTipoDocCliente').value;
+            const numDoc = document.getElementById('inputDocCliente').value.trim();
+            const nombreRaw = document.getElementById('inputCliente').value.trim();
+            const direccion = document.getElementById('inputDireccionCliente').value.trim();
+            const atencion = document.getElementById('inputAtencionCliente').value.trim();
+            const telefono = document.getElementById('inputTelefono').value.trim();
+            const formaPago = document.getElementById('inputFormaPago').value.trim();
+            const numCot = document.getElementById('inputNumeroCot').value.trim();
+
+            const esGenericoSinDatos = (!nombreRaw || nombreRaw.toUpperCase() === 'CLIENTE OCASIONAL') && !numDoc && !direccion && !atencion && !telefono;
+            if (esGenericoSinDatos) {
+                if (notificar) alert('Ingresa el RUC/DNI o el Nombre/Razón Social del cliente para guardarlo.');
+                return null;
+            }
+
+            const nombreFinal = nombreRaw || `CLIENTE ${tipoDoc} ${numDoc}`;
+            const key = numDoc ? `DOC_${numDoc}` : `NOM_${nombreFinal.toUpperCase()}`;
+
+            const idxPrevio = clientesGuardados.findIndex(c => c.nombre.toUpperCase() === nombreFinal.toUpperCase());
+            if (numDoc && idxPrevio >= 0 && clientesGuardados[idxPrevio].key !== key) {
+                clientesGuardados.splice(idxPrevio, 1);
+            }
+
+            const existente = clientesGuardados.find(c => c.key === key) || {};
+            const clienteObj = {
+                key,
+                tipoDoc,
+                numDoc: numDoc || existente.numDoc || '',
+                nombre: nombreFinal,
+                direccion: direccion || existente.direccion || '',
+                atencion: atencion || existente.atencion || '',
+                telefono: telefono || existente.telefono || '',
+                formaPago: formaPago || existente.formaPago || 'TRANSFERENCIA',
+                ultimaCotizacion: numCot || existente.ultimaCotizacion || '',
+                fechaActualizacion: new Date().toISOString()
+            };
+
+            const idx = clientesGuardados.findIndex(c => c.key === key);
+            if (idx >= 0) {
+                clientesGuardados[idx] = clienteObj;
+            } else {
+                clientesGuardados.unshift(clienteObj);
+            }
+
+            await guardarClienteEnDB(clienteObj);
+            actualizarContadorClientes();
+            enviarCambioAApi('GUARDAR_CLIENTE', clienteObj);
+
+            if (notificar) {
+                mostrarBadgeClienteGuardado('Cliente guardado en tu base de datos');
+                alert(`✅ Datos de "${clienteObj.nombre}"${clienteObj.numDoc ? ` (${clienteObj.tipoDoc}: ${clienteObj.numDoc})` : ''} guardados.`);
+            }
+            return clienteObj;
+        }
+
+        function mostrarBadgeClienteGuardado(texto) {
+            const badge = document.getElementById('badgeClienteEncontrado');
+            badge.innerHTML = `<i class="fa-solid fa-check-circle mr-1"></i> ${escapeHtml(texto)}`;
+            badge.classList.remove('hidden');
+        }
+
+        function rellenarFormularioCliente(c) {
+            if (!c) return;
+            if (c.tipoDoc) document.getElementById('selectTipoDocCliente').value = c.tipoDoc;
+            document.getElementById('inputDocCliente').value = c.numDoc || '';
+            document.getElementById('inputCliente').value = c.nombre || '';
+            document.getElementById('inputDireccionCliente').value = c.direccion || '';
+            document.getElementById('inputAtencionCliente').value = c.atencion || '';
+            document.getElementById('inputTelefono').value = c.telefono || '';
+            if (c.formaPago) document.getElementById('inputFormaPago').value = c.formaPago;
+            validarDocCliente();
+            sincronizarComprobanteSugerido();
+            cerrarDropdownsClientes();
+            mostrarBadgeClienteGuardado(`Cliente frecuente: ${c.nombre}`);
+        }
+
+        function limpiarDatosCliente() {
+            document.getElementById('inputDocCliente').value = '';
+            document.getElementById('inputCliente').value = '';
+            document.getElementById('inputDireccionCliente').value = '';
+            document.getElementById('inputAtencionCliente').value = '';
+            document.getElementById('inputTelefono').value = '';
+            document.getElementById('msgDocCliente').innerText = '';
+            document.getElementById('badgeClienteEncontrado').classList.add('hidden');
+            cerrarDropdownsClientes();
+        }
+
+        function cerrarDropdownsClientes() {
+            document.getElementById('dropdownSugerenciasCliente').classList.add('hidden');
+            document.getElementById('dropdownSugerenciasNombre').classList.add('hidden');
+        }
+
+        function renderizarSugerenciasClientes(contenedorId, coincidencias) {
+            const box = document.getElementById(contenedorId);
+            if (!coincidencias || coincidencias.length === 0) {
+                box.classList.add('hidden');
+                return;
+            }
+            box.innerHTML = coincidencias.slice(0, 8).map(c => `
+                <div onmousedown="seleccionarSugerenciaCliente('${escapeHtml(c.key)}')"
+                     class="w-full text-left px-3 py-2 hover:bg-amber-50 border-b border-slate-100 last:border-b-0 transition cursor-pointer flex justify-between items-start gap-2">
+                    <div class="min-w-0 flex-grow">
+                        <div class="flex items-center gap-2">
+                            <span class="font-bold text-slate-900 text-xs truncate">${escapeHtml(c.nombre)}</span>
+                            ${c.numDoc ? `<span class="text-[11px] font-mono bg-amber-100 text-amber-900 px-1.5 py-0.5 rounded font-bold shrink-0">${escapeHtml(c.tipoDoc)}: ${escapeHtml(c.numDoc)}</span>` : ''}
+                        </div>
+                        <div class="text-[10px] text-slate-500 truncate mt-0.5">
+                            ${c.direccion ? `Dir: ${escapeHtml(c.direccion)}` : 'Sin dirección'} ${c.telefono ? ` | Tel: ${escapeHtml(c.telefono)}` : ''}
+                        </div>
+                    </div>
+                    <button type="button" onmousedown="eliminarClienteGuardado('${escapeHtml(c.key)}', event)"
+                            class="text-slate-400 hover:text-red-600 px-1 py-0.5 text-xs shrink-0" title="Eliminar cliente guardado">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+            `).join('');
+            box.classList.remove('hidden');
+        }
+
+        function seleccionarSugerenciaCliente(key) {
+            const encontrado = clientesGuardados.find(c => c.key === key);
+            if (encontrado) rellenarFormularioCliente(encontrado);
+        }
+
+        function onInputDocCliente(valor) {
+            validarDocCliente();
+            const q = String(valor || '').trim().toLowerCase();
+            if (!q) {
+                document.getElementById('dropdownSugerenciasCliente').classList.add('hidden');
+                return;
+            }
+
+            const exacto = clientesGuardados.find(c => c.numDoc && c.numDoc.toLowerCase() === q);
+            if (exacto) {
+                rellenarFormularioCliente(exacto);
+                return;
+            }
+
+            const coincidencias = clientesGuardados.filter(c =>
+                (c.numDoc && c.numDoc.toLowerCase().includes(q)) ||
+                (c.nombre && c.nombre.toLowerCase().includes(q))
+            );
+            renderizarSugerenciasClientes('dropdownSugerenciasCliente', coincidencias);
+        }
+
+        function onInputNombreCliente(valor) {
+            const q = String(valor || '').trim().toLowerCase();
+            if (q.length < 2) {
+                document.getElementById('dropdownSugerenciasNombre').classList.add('hidden');
+                return;
+            }
+            const coincidencias = clientesGuardados.filter(c =>
+                (c.nombre && c.nombre.toLowerCase().includes(q)) ||
+                (c.numDoc && c.numDoc.toLowerCase().includes(q))
+            );
+            renderizarSugerenciasClientes('dropdownSugerenciasNombre', coincidencias);
+        }
+
+        document.addEventListener('click', function(e) {
+            if (!e.target.closest('#inputDocCliente') && !e.target.closest('#dropdownSugerenciasCliente')) {
+                document.getElementById('dropdownSugerenciasCliente').classList.add('hidden');
+            }
+            if (!e.target.closest('#inputCliente') && !e.target.closest('#dropdownSugerenciasNombre')) {
+                document.getElementById('dropdownSugerenciasNombre').classList.add('hidden');
+            }
+        });
+
+        async function enviarCambioAApi(accion, payload) {
+            const apiUrl = (localStorage.getItem('oz_api_url') || '').trim();
+            const apiToken = (localStorage.getItem('oz_api_token') || '').trim();
+            if (!apiUrl) return { ok: true, localOnly: true };
+
+            try {
+                const bodyObj = { accion, fecha: new Date().toISOString(), data: payload };
+                if (apiToken) bodyObj.token = apiToken;
+
+                const res = await fetch(apiUrl, {
+                    method: 'POST',
+                    redirect: 'follow',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify(bodyObj)
+                });
+
+                const texto = await res.text();
+                try {
+                    const json = JSON.parse(texto);
+                    if (json.status === 'error') {
+                        return { ok: false, error: json.message || 'Error en el servidor API' };
+                    }
+                    if (json.version) {
+                        localStorage.setItem('oz_ultima_version_nube', String(json.version));
+                    }
+                    return { ok: true, data: json };
+                } catch (_) {
+                    return { ok: res.ok, status: res.status };
+                }
+            } catch (err) {
+                console.warn('Error sincronizando con API externa (guardado localmente):', err);
+                return { ok: false, error: err.message };
+            }
+        }
+
+        // =========================================================================
+        // 3. EMISIÓN DE COMPROBANTES ELECTRÓNICOS A SUNAT (FACTURA 01 / BOLETA 03)
+        // =========================================================================
+        function sincronizarComprobanteSugerido() {
+            const doc = (document.getElementById('inputDocCliente')?.value || '').trim();
+            const tipoDocSelect = document.getElementById('selectTipoDocCliente');
+            const tipoCompSelect = document.getElementById('selectTipoComprobanteSunat');
+            const serieInput = document.getElementById('inputSerieSunat');
+            if (!tipoCompSelect || !serieInput) return;
+
+            if (doc.length === 11 || (tipoDocSelect && tipoDocSelect.value === 'RUC' && doc.length >= 11)) {
+                tipoCompSelect.value = '01';
+                if (!serieInput.value.startsWith('F')) serieInput.value = 'F001';
+            } else if (doc.length === 8 || (tipoDocSelect && tipoDocSelect.value === 'DNI')) {
+                tipoCompSelect.value = '03';
+                if (!serieInput.value.startsWith('B')) serieInput.value = 'B001';
+            }
+            actualizarCorrelativoSunatUI();
+        }
+
+        function obtenerSiguienteCorrelativoSunat(serie) {
+            const s = String(serie || 'F001').trim().toUpperCase();
+            const actual = parseInt(localStorage.getItem(`oz_sunat_corr_${s}`) || '0', 10) || 0;
+            return actual + 1;
+        }
+
+        function guardarCorrelativoSunat(serie, numero) {
+            const s = String(serie || 'F001').trim().toUpperCase();
+            localStorage.setItem(`oz_sunat_corr_${s}`, String(numero));
+            actualizarCorrelativoSunatUI();
+        }
+
+        function actualizarCorrelativoSunatUI() {
+            const serieInput = document.getElementById('inputSerieSunat');
+            const badge = document.getElementById('lblSiguienteCorrelativoSunat');
+            if (!serieInput || !badge) return;
+            const serie = (serieInput.value || 'F001').trim().toUpperCase();
+            const sig = obtenerSiguienteCorrelativoSunat(serie);
+            badge.innerText = `#${String(sig).padStart(8, '0')}`;
+        }
+
+        function descargarBase64ComoArchivo(base64Str, nombreArchivo, mimeType) {
+            if (!base64Str) return;
+            const binStr = atob(base64Str);
+            const len = binStr.length;
+            const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) {
+                bytes[i] = binStr.charCodeAt(i);
+            }
+            const blob = new Blob([bytes], { type: mimeType || 'application/octet-stream' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = nombreArchivo;
+            document.body.appendChild(a);
+            a.click();
+            setTimeout(() => {
+                if (a.parentNode) a.parentNode.removeChild(a);
+                URL.revokeObjectURL(url);
+            }, 8000);
+        }
+
+        async function emitirComprobanteSunatDesdeCotizador() {
+            if (cotizacion.length === 0) {
+                alert('Agrega al menos un producto a la cotización/venta antes de emitir a SUNAT.');
+                return;
+            }
+
+            const sunatUrl = (localStorage.getItem('oz_sunat_api_url') || '').trim();
+            if (!sunatUrl) {
+                alert('Primero configura la URL de tu motor / API SUNAT en "Configurar API BD / SUNAT".');
+                abrirModalApi();
+                return;
+            }
+
+            const numDocRaw = (document.getElementById('inputDocCliente').value || '').trim();
+            const tipoDocComp = document.getElementById('selectTipoComprobanteSunat').value || '01';
+            const serie = (document.getElementById('inputSerieSunat').value || (tipoDocComp === '01' ? 'F001' : 'B001')).trim().toUpperCase();
+            const correlativo = obtenerSiguienteCorrelativoSunat(serie);
+            const razonSocialCliente = (document.getElementById('inputCliente').value || '').trim() || 'CLIENTE VARIOS';
+
+            if (tipoDocComp === '01' && numDocRaw.length !== 11) {
+                alert('Para emitir FACTURA (01) ante SUNAT debes ingresar un RUC válido de 11 dígitos.');
+                document.getElementById('inputDocCliente').focus();
+                return;
+            }
+            if (tipoDocComp === '03' && numDocRaw && numDocRaw.length !== 8 && numDocRaw.length !== 11) {
+                alert('Si ingresas documento para BOLETA (03), debe tener 8 dígitos (DNI) o 11 dígitos (RUC).');
+                return;
+            }
+
+            await guardarClienteActual(false);
+
+            const monedaCodigo = document.getElementById('selectMoneda').value === 'DOLARES' ? 'USD' : 'PEN';
+            const preciosSinIgv = document.getElementById('chkDesglosarIgv').checked;
+
+            let gravadaTotal = 0;
+            let igvTotal = 0;
+
+            const itemsSunat = cotizacion.map((item, idx) => {
+                const cantidad = Number(item.cantidad) || 1;
+                const precioRef = Number(item.precio) || 0;
+
+                // Si chkDesglosarIgv está marcado, el precio ingresado es base sin IGV; si no, ya incluye IGV (18%)
+                const valorUnitario = preciosSinIgv ? precioRef : (precioRef / 1.18);
+                const precioUnitario = preciosSinIgv ? (precioRef * 1.18) : precioRef;
+
+                const valorVenta = Number((valorUnitario * cantidad).toFixed(2));
+                const igvItem = Number((valorVenta * 0.18).toFixed(2));
+
+                gravadaTotal = Number((gravadaTotal + valorVenta).toFixed(2));
+                igvTotal = Number((igvTotal + igvItem).toFixed(2));
+
+                return {
+                    codigo: String(item.id || `PROD-${idx + 1}`).slice(0, 30),
+                    unidad: String(item.um || 'NIU').toUpperCase(),
+                    cantidad,
+                    descripcion: String(item.nombre || 'PRODUCTO ELECTRICO').trim(),
+                    valorUnitario: Number(valorUnitario.toFixed(6)),
+                    precioUnitario: Number(precioUnitario.toFixed(6)),
+                    valorVenta,
+                    igv: igvItem
+                };
+            });
+
+            const totalSunat = Number((gravadaTotal + igvTotal).toFixed(2));
+            const tipoDocSunatCliente = numDocRaw.length === 11 ? '6' : (numDocRaw.length === 8 ? '1' : '0');
+
+            const payloadSunat = {
+                entorno: localStorage.getItem('oz_sunat_entorno') || 'BETA',
+                emisor: {
+                    ruc: (document.getElementById('inputRucEmisor').value || '15615084279').trim(),
+                    razonSocial: (document.getElementById('inputRazonSocialEmisor').value || 'PAEZ HERRERA OSCAR HERNAN - Suministros Electric Oz').trim(),
+                    nombreComercial: 'Suministros Electric Oz'
+                },
+                tipoDoc: tipoDocComp,
+                serie,
+                correlativo: String(correlativo),
+                moneda: monedaCodigo,
+                gravada: gravadaTotal,
+                igv: igvTotal,
+                total: totalSunat,
+                cliente: {
+                    tipoDoc: tipoDocSunatCliente,
+                    numDoc: numDocRaw || '00000000',
+                    razonSocial: razonSocialCliente
+                },
+                items: itemsSunat
+            };
+
+            const btn = document.getElementById('btnEmitirSunat');
+            const txtBtn = document.getElementById('txtBtnEmitirSunat');
+            const textoOriginal = txtBtn ? txtBtn.innerText : 'Emitir a SUNAT';
+
+            try {
+                if (btn) btn.disabled = true;
+                if (txtBtn) txtBtn.innerText = 'Enviando comprobante a SUNAT...';
+
+                const resp = await fetch(sunatUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payloadSunat)
+                });
+
+                if (!resp.ok) {
+                    throw new Error(`Error HTTP ${resp.status} al conectar con el motor SUNAT`);
+                }
+
+                const resultado = await resp.json();
+
+                if (resultado.exito) {
+                    guardarCorrelativoSunat(serie, correlativo);
+
+                    const corrStr = String(correlativo).padStart(8, '0');
+                    const comprobanteId = `${serie}-${corrStr}`;
+
+                    if (resultado.xml_firmado) {
+                        descargarBase64ComoArchivo(resultado.xml_firmado, `${comprobanteId}.xml`, 'application/xml');
+                    }
+                    if (resultado.cdr_zip) {
+                        descargarBase64ComoArchivo(resultado.cdr_zip, `R-${comprobanteId}.zip`, 'application/zip');
+                    }
+
+                    const registroComp = {
+                        comprobanteId,
+                        tipoDoc: tipoDocComp,
+                        serie,
+                        correlativo,
+                        fecha: new Date().toISOString(),
+                        cliente: razonSocialCliente,
+                        numDoc: numDocRaw,
+                        moneda: monedaCodigo,
+                        gravada: gravadaTotal,
+                        igv: igvTotal,
+                        total: totalSunat,
+                        codigoSunat: resultado.codigo || '0',
+                        descripcionSunat: resultado.descripcion || 'Aceptado'
+                    };
+
+                    if (!dbInstance) await abrirIndexedDB();
+                    if (dbInstance) {
+                        const tx = dbInstance.transaction('comprobantes_sunat', 'readwrite');
+                        tx.objectStore('comprobantes_sunat').put(registroComp);
+                    }
+                    enviarCambioAApi('GUARDAR_COMPROBANTE_SUNAT', registroComp);
+
+                    mostrarNotificacionFlotante(
+                        `<strong>✅ SUNAT Aceptó ${escapeHtml(comprobanteId)}</strong><br>` +
+                        `${escapeHtml(resultado.descripcion || 'Comprobante registrado correctamente')}.`
+                    );
+                    alert(`✅ Comprobante ${comprobanteId} aceptado por SUNAT.\n${resultado.descripcion || ''}`);
+                } else {
+                    alert(`❌ SUNAT rechazó/observó el comprobante [${resultado.codigo || 'ERR'}]:\n${resultado.mensaje || resultado.descripcion || 'Revisa los datos'}`);
+                }
+            } catch (err) {
+                console.error('Error emisión SUNAT:', err);
+                alert(`❌ No se pudo emitir a SUNAT:\n${err.message}`);
+            } finally {
+                if (btn) btn.disabled = false;
+                if (txtBtn) txtBtn.innerText = textoOriginal;
+            }
+        }
+
+        // =========================================================================
+        // 4. NORMALIZACIÓN DE DATOS DEL EXCEL
+        // =========================================================================
+        function normalizarProducto(raw) {
+            const nombreExacto = String(raw.nombre || raw.Nombre || '').trim();
+            let marca = String(raw.marca || raw.Marca || '-').trim();
+            if (marca === '-' || !marca) {
+                const marcasConocidas = ['INDECO', 'SCHNEIDER', 'MENNEKES', 'BTICINO', 'CHINT', 'PHILIPS', 'LEVITON', 'SIEMENS', 'ABB', 'MIGUELEZ', 'OPALUX', 'TRUPER', 'CELSA', 'DEXSON', 'BOSCH', 'MACROLED'];
+                const detectada = marcasConocidas.find(m => nombreExacto.toUpperCase().includes(m));
+                if (detectada) marca = detectada;
+            }
+            return {
+                id: String(raw.id || raw.Codigo || '').trim(),
+                nombre: nombreExacto,
+                compra: parseFloat(raw.compra ?? raw['P. compra'] ?? 0) || 0,
+                precio2: parseFloat(raw.precio2 ?? raw.P2 ?? 0) || 0,
+                categoria: String(raw.categoria || raw.Categoria || 'SIN CATEGORIA').trim(),
+                marca: marca,
+                stock: parseFloat(raw.stock ?? raw.Stock ?? 0) || 0,
+                um: String(raw.um || raw.UM || 'UN').trim().toUpperCase()
+            };
+        }
+
+        async function vaciarCatalogoLocal() {
+            if (!confirm('¿Seguro que deseas vaciar la base de datos local para dejarla en 0 productos antes de volver a cargar tu Excel?')) return;
+            catalogo = [];
+            resultadosFiltrados = [];
+            localStorage.setItem('oz_catalogo_vaciado', '1');
+            await guardarCatalogoCompletoEnDB([]);
+            actualizarFiltrosMarca();
+            paginaActual = 1;
+            filtrarProductos();
+            cerrarModalApi();
+            mostrarNotificacionFlotante('<strong>Base de datos limpia (0 productos).</strong><br>Ahora presiona <em>Importar Excel (.xlsx)</em> para cargar y subir tu catálogo a la API.');
+        }
+
+        async function subirCatalogoCompletoAApi(mostrarAlerta = true) {
+            const apiUrl = (localStorage.getItem('oz_api_url') || '').trim();
+            if (!apiUrl) {
+                if (mostrarAlerta) alert('Primero configura y guarda la URL de tu API en "Configurar API BD / SUNAT".');
+                return { ok: false, localOnly: true };
+            }
+            if (catalogo.length === 0) {
+                if (mostrarAlerta) alert('El catálogo está en 0 productos. Importa primero tu archivo Excel.');
+                return { ok: false, error: 'Catálogo vacío' };
+            }
+
+            mostrarNotificacionFlotante(`<strong>Subiendo ${catalogo.length.toLocaleString()} productos a Google Sheets...</strong><br>Por favor espera unos segundos sin cerrar la página.`);
+            const res = await enviarCambioAApi('SUBIR_CATALOGO_MASIVO', {
+                productos: catalogo,
+                clientes: clientesGuardados
+            });
+
+            if (res.ok) {
+                mostrarNotificacionFlotante(`<strong>✅ ¡Sincronización masiva completada!</strong><br>${catalogo.length.toLocaleString()} productos cargados en tu hoja de Google Sheets.`);
+                if (mostrarAlerta) alert(`✅ ¡Listo! Se subieron ${catalogo.length.toLocaleString()} productos a Google Sheets correctamente.`);
+            } else {
+                if (mostrarAlerta) alert(`⚠️ Se guardaron localmente, pero la API devolvió un error al subir el catálogo masivo${res.error ? ': ' + res.error : ''}.`);
+            }
+            return res;
+        }
+
+        function importarDesdeExcel(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = async function(e) {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                const rows = XLSX.utils.sheet_to_json(firstSheet, { defval: '' });
+
+                if (rows.length === 0) {
+                    alert('El archivo Excel está vacío.');
+                    event.target.value = '';
+                    return;
+                }
+
+                localStorage.removeItem('oz_catalogo_vaciado');
+                catalogo = rows.map(normalizarProducto).filter(p => p.id && p.nombre);
+                await guardarCatalogoCompletoEnDB(catalogo);
+                actualizarFiltrosMarca();
+                paginaActual = 1;
+                filtrarProductos();
+                event.target.value = '';
+
+                const apiUrl = (localStorage.getItem('oz_api_url') || '').trim();
+                if (apiUrl) {
+                    const apiRes = await subirCatalogoCompletoAApi(false);
+                    if (apiRes.ok) {
+                        alert(`✅ Se importaron ${catalogo.length.toLocaleString()} productos desde "${file.name}" y se subieron automáticamente a tu API de Google Sheets.`);
+                    } else {
+                        alert(`✅ Se importaron ${catalogo.length.toLocaleString()} productos en BD Local, pero la API no respondió${apiRes.error ? ': ' + apiRes.error : ''}.`);
+                    }
+                } else {
+                    alert(`✅ Se importaron y guardaron ${catalogo.length.toLocaleString()} productos exactos en BD Local desde "${file.name}".`);
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        function exportarExcelActualizado() {
+            const dataProductos = catalogo.map(p => ({
+                Codigo: p.id,
+                Nombre: p.nombre,
+                'P. compra': p.compra,
+                P2: p.precio2,
+                Marca: p.marca,
+                Categoria: p.categoria,
+                Stock: p.stock,
+                UM: p.um
+            }));
+            const wb = XLSX.utils.book_new();
+            const wsProd = XLSX.utils.json_to_sheet(dataProductos);
+            XLSX.utils.book_append_sheet(wb, wsProd, 'Productos');
+
+            if (clientesGuardados.length > 0) {
+                const dataClientes = clientesGuardados.map(c => ({
+                    TipoDoc: c.tipoDoc,
+                    Documento: c.numDoc,
+                    Cliente: c.nombre,
+                    Direccion: c.direccion,
+                    Atencion: c.atencion,
+                    Telefono: c.telefono,
+                    FormaPago: c.formaPago
+                }));
+                const wsCli = XLSX.utils.json_to_sheet(dataClientes);
+                XLSX.utils.book_append_sheet(wb, wsCli, 'Clientes_Guardados');
+            }
+
+            XLSX.writeFile(wb, `BD_Suministros_Electric_Oz_${new Date().toISOString().slice(0,10)}.xlsx`);
+        }
+
+        // =========================================================================
+        // 5. BÚSQUEDA, PAGINACIÓN Y RENDERIZADO DEL CATÁLOGO
+        // =========================================================================
+        function actualizarFiltrosMarca() {
+            const select = document.getElementById('filtroMarca');
+            const marcas = [...new Set(catalogo.map(p => p.marca).filter(m => m && m !== '-'))].sort();
+            select.innerHTML = `<option value="">Todas las Marcas (${marcas.length})</option>` +
+                marcas.map(m => `<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`).join('');
+            document.getElementById('headerTotalProductos').innerText = catalogo.length.toLocaleString();
+            document.getElementById('lblTotalCatalogo').innerText = catalogo.length.toLocaleString();
+        }
+
+        function filtrarProductos() {
+            const query = document.getElementById('searchBox').value.toLowerCase().trim();
+            const marcaFiltro = document.getElementById('filtroMarca').value;
+            const palabras = query ? query.split(/\s+/) : [];
+
+            resultadosFiltrados = catalogo.filter(p => {
+                if (marcaFiltro && p.marca !== marcaFiltro) return false;
+                if (palabras.length === 0) return true;
+                const texto = `${p.id} ${p.nombre} ${p.marca} ${p.categoria}`.toLowerCase();
+                return palabras.every(pal => texto.includes(pal));
+            });
+
+            renderizarPaginaCatalogo();
+        }
+
+        function cambiarPagina(delta) {
+            const totalPaginas = Math.max(1, Math.ceil(resultadosFiltrados.length / ITEMS_POR_PAGINA));
+            paginaActual = Math.min(totalPaginas, Math.max(1, paginaActual + delta));
+            renderizarPaginaCatalogo();
+        }
+
+        function renderizarPaginaCatalogo() {
+            const tbody = document.getElementById('tablaProductos');
+            const total = resultadosFiltrados.length;
+            const totalPaginas = Math.max(1, Math.ceil(total / ITEMS_POR_PAGINA));
+            if (paginaActual > totalPaginas) paginaActual = totalPaginas;
+
+            const inicio = (paginaActual - 1) * ITEMS_POR_PAGINA;
+            const fin = Math.min(inicio + ITEMS_POR_PAGINA, total);
+            const slice = resultadosFiltrados.slice(inicio, fin);
+
+            document.getElementById('contadorResultados').innerText = `${total.toLocaleString()} resultados`;
+            document.getElementById('infoPaginacion').innerText = total === 0 ? 'Sin resultados' : `Mostrando ${inicio + 1} - ${fin} de ${total.toLocaleString()}`;
+            document.getElementById('lblPaginaActual').innerText = `Pág. ${paginaActual} de ${totalPaginas}`;
+            document.getElementById('btnPrevPage').disabled = paginaActual <= 1;
+            document.getElementById('btnNextPage').disabled = paginaActual >= totalPaginas;
+
+            if (slice.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="6" class="text-center py-8 text-slate-400">No se encontraron productos con ese criterio.</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = slice.map((p, idx) => {
+                const indexGlobal = inicio + idx;
+                const utilidad = p.precio2 - p.compra;
+                const margenPct = p.compra > 0 ? ((utilidad / p.compra) * 100) : 100;
+                const esPerdida = p.compra > 0 && p.precio2 < p.compra;
+                const badgeMargen = esPerdida
+                    ? `<span class="text-red-600 font-bold" title="¡Alerta! Precio 2 menor al costo">-${Math.abs(utilidad).toFixed(2)}</span>`
+                    : `<span class="text-emerald-700 font-semibold">+${utilidad.toFixed(2)} (${margenPct.toFixed(0)}%)</span>`;
+
+                return `
+                    <tr class="hover:bg-amber-50/40 transition">
+                        <td class="py-2 px-3">
+                            <div class="font-semibold text-slate-800 leading-snug">${escapeHtml(p.nombre)}</div>
+                            <div class="text-[11px] text-slate-500 flex flex-wrap items-center gap-2 mt-0.5">
+                                <span class="bg-slate-100 px-1.5 py-0.5 rounded font-mono text-slate-700">Cód: ${escapeHtml(p.id)}</span>
+                                ${p.marca && p.marca !== '-' ? `<span class="text-amber-700 font-semibold">Marca: ${escapeHtml(p.marca)}</span>` : ''}
+                            </div>
+                        </td>
+                        <td class="py-2 px-2 text-center font-mono text-slate-600">${escapeHtml(p.um)}</td>
+                        <td class="py-2 px-2 text-right font-mono text-blue-700 bg-blue-50/40">S/ ${p.compra.toFixed(2)}</td>
+                        <td class="py-2 px-2 text-right font-mono font-bold text-amber-700">S/ ${p.precio2.toFixed(2)}</td>
+                        <td class="py-2 px-2 text-right font-mono text-[11px]">${badgeMargen}</td>
+                        <td class="py-2 px-3 text-center whitespace-nowrap">
+                            <button onclick="cargarEnEditor(${indexGlobal})" class="bg-amber-100 hover:bg-amber-200 text-amber-900 px-2 py-1 rounded mr-1 font-medium" title="Editar costo, precio o nombre en recuadro">
+                                <i class="fa-solid fa-pen"></i>
+                            </button>
+                            <button onclick="agregarACotizacionDesdeLista(${indexGlobal})" class="bg-slate-900 hover:bg-amber-600 text-white px-2.5 py-1 rounded font-medium shadow-sm">
+                                <i class="fa-solid fa-plus"></i> Cotizar
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        // =========================================================================
+        // 6. RECUADRO APARTE DE EDICIÓN DE PRODUCTO
+        // =========================================================================
+        function cargarEnEditor(indexEnFiltrados) {
+            const p = resultadosFiltrados[indexEnFiltrados];
+            if (!p) return;
+            document.getElementById('editOriginalId').value = p.id;
+            document.getElementById('editCodigo').value = p.id;
+            document.getElementById('editNombre').value = p.nombre;
+            document.getElementById('editMarca').value = p.marca === '-' ? '' : p.marca;
+            document.getElementById('editUm').value = p.um || 'UN';
+            document.getElementById('editCompra').value = p.compra;
+            document.getElementById('editPrecio2').value = p.precio2;
+            recalcularMargenEditor();
+            document.getElementById('recuadroEditorProducto').scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+
+        function prepararNuevoProducto() {
+            limpiarEditorProducto();
+            document.getElementById('editCodigo').value = 'OZ-' + Date.now().toString().slice(-6);
+            document.getElementById('editNombre').focus();
+        }
+
+        function limpiarEditorProducto() {
+            document.getElementById('editOriginalId').value = '';
+            document.getElementById('editCodigo').value = '';
+            document.getElementById('editNombre').value = '';
+            document.getElementById('editMarca').value = '';
+            document.getElementById('editUm').value = 'UN';
+            document.getElementById('editCompra').value = '';
+            document.getElementById('editPrecio2').value = '';
+            recalcularMargenEditor();
+        }
+
+        function recalcularMargenEditor() {
+            const compra = parseFloat(document.getElementById('editCompra').value) || 0;
+            const p2 = parseFloat(document.getElementById('editPrecio2').value) || 0;
+            const util = p2 - compra;
+            const pct = compra > 0 ? ((util / compra) * 100) : (p2 > 0 ? 100 : 0);
+            const badge = document.getElementById('badgeMargenEditor');
+
+            if (compra > 0 && p2 < compra) {
+                badge.className = 'px-2.5 py-1.5 rounded-lg bg-red-100 border border-red-300 font-mono text-center font-bold text-red-700';
+                badge.innerText = `⚠️ Pérdida: S/ ${util.toFixed(2)} (${pct.toFixed(1)}%)`;
+            } else {
+                badge.className = 'px-2.5 py-1.5 rounded-lg bg-emerald-50 border border-emerald-300 font-mono text-center font-bold text-emerald-800';
+                badge.innerText = `Utilidad: S/ ${util.toFixed(2)} (${pct.toFixed(1)}%)`;
+            }
+        }
+
+        async function guardarProductoDesdeEditor() {
+            const originalId = document.getElementById('editOriginalId').value.trim();
+            const nuevoId = document.getElementById('editCodigo').value.trim();
+            const nombre = document.getElementById('editNombre').value.trim();
+            const marca = document.getElementById('editMarca').value.trim() || '-';
+            const um = document.getElementById('editUm').value.trim().toUpperCase() || 'UN';
+            const compra = parseFloat(document.getElementById('editCompra').value) || 0;
+            const precio2 = parseFloat(document.getElementById('editPrecio2').value) || 0;
+
+            if (!nuevoId || !nombre) {
+                alert('Ingresa al menos el Código y la Descripción del producto.');
+                return;
+            }
+
+            const idxExistente = catalogo.findIndex(p => p.id === (originalId || nuevoId));
+            const productoActualizado = {
+                id: nuevoId,
+                nombre,
+                marca,
+                um,
+                compra,
+                precio2,
+                categoria: idxExistente >= 0 ? catalogo[idxExistente].categoria : 'GENERAL',
+                stock: idxExistente >= 0 ? catalogo[idxExistente].stock : 0
+            };
+
+            if (idxExistente >= 0) {
+                catalogo[idxExistente] = productoActualizado;
+            } else {
+                catalogo.unshift(productoActualizado);
+            }
+
+            await guardarUnProductoEnDB(productoActualizado);
+            const apiRes = await enviarCambioAApi('ACTUALIZAR_PRODUCTO', productoActualizado);
+
+            if (document.getElementById('chkActualizarEnCotizacion').checked) {
+                cotizacion.forEach(item => {
+                    if (item.id === (originalId || nuevoId)) {
+                        item.id = nuevoId;
+                        item.nombre = nombre;
+                        item.um = um;
+                        item.compra = compra;
+                        item.precio = precio2;
+                    }
+                });
+                actualizarCotizacion();
+            }
+
+            actualizarFiltrosMarca();
+            filtrarProductos();
+            document.getElementById('editOriginalId').value = nuevoId;
+
+            alert(apiRes.localOnly
+                ? '✅ Producto guardado en la Base de Datos Local.'
+                : (apiRes.ok ? '✅ Producto guardado en BD Local y sincronizado con la API.' : `✅ Guardado en BD Local (API no respondió${apiRes.error ? ': ' + apiRes.error : ''}).`));
+        }
+
+        // =========================================================================
+        // 7. COTIZACIÓN TOTALMENTE EDITABLE ANTES DE DESCARGAR / EMITIR
+        // =========================================================================
+        function agregarACotizacionDesdeLista(indexEnFiltrados) {
+            const p = resultadosFiltrados[indexEnFiltrados];
+            if (!p) return;
+
+            const existente = cotizacion.find(item => item.id === p.id);
+            if (existente) {
+                existente.cantidad += 1;
+            } else {
+                cotizacion.push({
+                    uid: Date.now() + Math.random(),
+                    id: p.id,
+                    nombre: p.nombre,
+                    um: p.um || 'UN',
+                    cantidad: 1,
+                    precio: p.precio2,
+                    compra: p.compra
+                });
+            }
+            actualizarCotizacion();
+        }
+
+        function agregarItemManual() {
+            cotizacion.push({
+                uid: Date.now() + Math.random(),
+                id: 'MANUAL',
+                nombre: 'PRODUCTO / SERVICIO PERSONALIZADO',
+                um: 'UN',
+                cantidad: 1,
+                precio: 0.00,
+                compra: 0.00
+            });
+            actualizarCotizacion();
+        }
+
+        function editarCampoItemCotizacion(index, campo, valor) {
+            const item = cotizacion[index];
+            if (!item) return;
+
+            if (campo === 'cantidad' || campo === 'precio') {
+                item[campo] = parseFloat(valor) || 0;
+            } else if (campo === 'um') {
+                item.um = String(valor || 'UN').toUpperCase();
+            } else {
+                item[campo] = String(valor);
+            }
+            actualizarCotizacion(false);
+        }
+
+        async function guardarItemCotizacionEnCatalogo(index) {
+            const item = cotizacion[index];
+            if (!item) return;
+
+            const idxCat = catalogo.findIndex(p => p.id === item.id);
+            const objGuardar = {
+                id: item.id,
+                nombre: item.nombre.trim(),
+                um: item.um.trim().toUpperCase() || 'UN',
+                precio2: item.precio,
+                compra: item.compra,
+                marca: idxCat >= 0 ? catalogo[idxCat].marca : '-',
+                categoria: idxCat >= 0 ? catalogo[idxCat].categoria : 'GENERAL',
+                stock: idxCat >= 0 ? catalogo[idxCat].stock : 0
+            };
+
+            if (idxCat >= 0) {
+                catalogo[idxCat] = objGuardar;
+            } else {
+                catalogo.unshift(objGuardar);
+            }
+
+            await guardarUnProductoEnDB(objGuardar);
+            await enviarCambioAApi('ACTUALIZAR_PRODUCTO', objGuardar);
+            filtrarProductos();
+            alert(`✅ Cambios de "${objGuardar.nombre}" guardados en la Base de Datos / API.`);
+        }
+
+        function eliminarItemCotizacion(index) {
+            cotizacion.splice(index, 1);
+            actualizarCotizacion();
+        }
+
+        function limpiarCotizacion() {
+            if (cotizacion.length > 0 && confirm('¿Vaciar todos los productos de la cotización actual?')) {
+                cotizacion = [];
+                actualizarCotizacion();
+            }
+        }
+
+        function actualizarCotizacion(reRenderLista = true) {
+            const contenedor = document.getElementById('listaCotizacion');
+            const simbolo = document.getElementById('selectMoneda').value === 'DOLARES' ? '$' : 'S/';
+
+            if (cotizacion.length === 0) {
+                contenedor.innerHTML = `<p class="text-xs text-slate-400 text-center py-8">No hay productos agregados a la cotización.</p>`;
+                document.getElementById('lblCantidadItems').innerText = '0';
+                document.getElementById('lblCostoTotalInterno').innerText = `${simbolo} 0.00`;
+                document.getElementById('lblGananciaInterna').innerText = `${simbolo} 0.00`;
+                document.getElementById('lblMargenPorcentaje').innerText = '0.0%';
+                document.getElementById('lblSubtotal').innerText = `${simbolo} 0.00`;
+                document.getElementById('lblIgv').innerText = `${simbolo} 0.00`;
+                document.getElementById('lblTotal').innerText = `${simbolo} 0.00`;
+                return;
+            }
+
+            if (reRenderLista) {
+                contenedor.innerHTML = cotizacion.map((item, idx) => {
+                    const subtotalItem = item.cantidad * item.precio;
+                    const esBajoCosto = item.compra > 0 && item.precio < item.compra;
+                    return `
+                        <div class="bg-slate-50 p-2.5 rounded-lg border ${esBajoCosto ? 'border-red-300 bg-red-50/40' : 'border-slate-200'} text-xs space-y-2">
+                            <div class="flex items-start gap-1.5">
+                                <input type="text" value="${escapeHtml(item.id)}" onchange="editarCampoItemCotizacion(${idx}, 'id', this.value)"
+                                       class="w-24 px-1.5 py-1 bg-white border border-slate-300 rounded font-mono text-[11px]" title="Código">
+                                <input type="text" value="${escapeHtml(item.nombre)}" oninput="editarCampoItemCotizacion(${idx}, 'nombre', this.value)"
+                                       class="flex-grow px-2 py-1 bg-white border border-slate-300 rounded font-semibold text-slate-800" title="Editar descripción">
+                                <button onclick="guardarItemCotizacionEnCatalogo(${idx})" class="bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 rounded" title="Guardar edición en BD/API del catálogo">
+                                    <i class="fa-solid fa-floppy-disk"></i>
+                                </button>
+                                <button onclick="eliminarItemCotizacion(${idx})" class="bg-red-100 hover:bg-red-200 text-red-700 px-2 py-1 rounded" title="Quitar ítem">
+                                    <i class="fa-solid fa-xmark"></i>
+                                </button>
+                            </div>
+
+                            <div class="grid grid-cols-12 gap-1.5 items-center">
+                                <div class="col-span-3">
+                                    <span class="block text-[10px] text-slate-500">Unidad:</span>
+                                    <input type="text" value="${escapeHtml(item.um)}" list="listaUnidades" onchange="editarCampoItemCotizacion(${idx}, 'um', this.value)"
+                                           class="w-full px-1.5 py-1 bg-white border border-slate-300 rounded uppercase font-mono text-center">
+                                </div>
+                                <div class="col-span-3">
+                                    <span class="block text-[10px] text-slate-500">Cant.:</span>
+                                    <input type="number" step="0.01" min="0" value="${item.cantidad}" oninput="editarCampoItemCotizacion(${idx}, 'cantidad', this.value)"
+                                           class="w-full px-1.5 py-1 bg-white border border-slate-300 rounded font-mono text-right font-bold">
+                                </div>
+                                <div class="col-span-3">
+                                    <span class="block text-[10px] text-amber-700 font-semibold">P. Unit.:</span>
+                                    <input type="number" step="0.01" min="0" value="${item.precio}" oninput="editarCampoItemCotizacion(${idx}, 'precio', this.value)"
+                                           class="w-full px-1.5 py-1 bg-white border border-amber-300 rounded font-mono text-right font-bold text-amber-700">
+                                </div>
+                                <div class="col-span-3 text-right">
+                                    <span class="block text-[10px] text-slate-500">Total Ítem:</span>
+                                    <span id="subtotalItem_${idx}" class="font-mono font-bold text-slate-900">${simbolo} ${subtotalItem.toFixed(2)}</span>
+                                </div>
+                            </div>
+
+                            <div class="flex justify-between text-[10px] text-slate-500 pt-0.5 border-t border-slate-200/70">
+                                <span>Costo interno unit.: <strong class="text-blue-700 font-mono">${simbolo} ${item.compra.toFixed(2)}</strong></span>
+                                <span id="utilItem_${idx}" class="${esBajoCosto ? 'text-red-600 font-bold' : 'text-emerald-700 font-semibold'}">
+                                    Ganancia: ${simbolo} ${((item.precio - item.compra) * item.cantidad).toFixed(2)}
+                                </span>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            } else {
+                cotizacion.forEach((item, idx) => {
+                    const elSub = document.getElementById(`subtotalItem_${idx}`);
+                    const elUtil = document.getElementById(`utilItem_${idx}`);
+                    if (elSub) elSub.innerText = `${simbolo} ${(item.cantidad * item.precio).toFixed(2)}`;
+                    if (elUtil) elUtil.innerText = `Ganancia: ${simbolo} ${((item.precio - item.compra) * item.cantidad).toFixed(2)}`;
+                });
+            }
+
+            const sumaVenta = cotizacion.reduce((acc, i) => acc + (i.cantidad * i.precio), 0);
+            const sumaCosto = cotizacion.reduce((acc, i) => acc + (i.cantidad * i.compra), 0);
+            const ganancia = sumaVenta - sumaCosto;
+            const margenPct = sumaCosto > 0 ? ((ganancia / sumaCosto) * 100) : 100;
+
+            const desglosarIgv = document.getElementById('chkDesglosarIgv').checked;
+            let subtotal = sumaVenta;
+            let igv = 0;
+            let totalFinal = sumaVenta;
+
+            if (desglosarIgv) {
+                igv = sumaVenta * 0.18;
+                totalFinal = sumaVenta + igv;
+                document.getElementById('rowSubtotal').classList.remove('hidden');
+                document.getElementById('rowIgv').classList.remove('hidden');
+            } else {
+                document.getElementById('rowSubtotal').classList.add('hidden');
+                document.getElementById('rowIgv').classList.add('hidden');
+            }
+
+            document.getElementById('lblCantidadItems').innerText = cotizacion.length;
+            document.getElementById('lblCostoTotalInterno').innerText = `${simbolo} ${sumaCosto.toFixed(2)}`;
+            document.getElementById('lblGananciaInterna').innerText = `${simbolo} ${ganancia.toFixed(2)}`;
+            document.getElementById('lblMargenPorcentaje').innerText = `${margenPct.toFixed(1)}%`;
+            document.getElementById('lblSubtotal').innerText = `${simbolo} ${subtotal.toFixed(2)}`;
+            document.getElementById('lblIgv').innerText = `${simbolo} ${igv.toFixed(2)}`;
+            document.getElementById('lblTotal').innerText = `${simbolo} ${totalFinal.toFixed(2)}`;
+        }
+
+        // =========================================================================
+        // 8. VALIDACIÓN RUC / DNI Y GENERACIÓN INSTANTÁNEA DE PDF CON JSPDF PURO
+        // =========================================================================
+        function validarDocCliente() {
+            const tipo = document.getElementById('selectTipoDocCliente').value;
+            const doc = document.getElementById('inputDocCliente').value.trim();
+            const msg = document.getElementById('msgDocCliente');
+            if (!doc || tipo === 'S/D') { msg.innerText = ''; return; }
+            if (tipo === 'RUC') {
+                msg.innerText = doc.length === 11 ? '✓ RUC válido (11 dígitos)' : `RUC requiere 11 dígitos (${doc.length}/11)`;
+                msg.className = doc.length === 11 ? 'text-[10px] text-emerald-600' : 'text-[10px] text-amber-600';
+            } else if (tipo === 'DNI') {
+                msg.innerText = doc.length === 8 ? '✓ DNI válido (8 dígitos)' : `DNI requiere 8 dígitos (${doc.length}/8)`;
+                msg.className = doc.length === 8 ? 'text-[10px] text-emerald-600' : 'text-[10px] text-amber-600';
+            }
+        }
+
+        function convertirNumeroALetras(monto, moneda) {
+            const entero = Math.floor(monto);
+            const centavos = Math.round((monto - entero) * 100);
+            const centavosStr = String(centavos).padStart(2, '0');
+            const unidades = ['', 'UN', 'DOS', 'TRES', 'CUATRO', 'CINCO', 'SEIS', 'SIETE', 'OCHO', 'NUEVE'];
+            const especiales = ['DIEZ', 'ONCE', 'DOCE', 'TRECE', 'CATORCE', 'QUINCE', 'DIECISEIS', 'DIECISIETE', 'DIECIOCHO', 'DIECINUEVE'];
+            const decenas = ['', '', 'VEINTE', 'TREINTA', 'CUARENTA', 'CINCUENTA', 'SESENTA', 'SETENTA', 'OCHENTA', 'NOVENTA'];
+            const centenas = ['', 'CIENTO', 'DOSCIENTOS', 'TRESCIENTOS', 'CUATROCIENTOS', 'QUINIENTOS', 'SEISCIENTOS', 'SETECIENTOS', 'OCHOCIENTOS', 'NOVECIENTOS'];
+
+            function tresDigitos(n) {
+                if (n === 0) return '';
+                if (n === 100) return 'CIEN';
+                let res = '';
+                const c = Math.floor(n / 100);
+                const r = n % 100;
+                if (c > 0) res += centenas[c] + ' ';
+                if (r >= 10 && r <= 19) {
+                    res += especiales[r - 10];
+                } else if (r >= 21 && r <= 29) {
+                    res += 'VEINTI' + unidades[r - 20];
+                } else {
+                    const d = Math.floor(r / 10);
+                    const u = r % 10;
+                    if (d > 0) res += decenas[d] + (u > 0 ? ' Y ' : '');
+                    if (u > 0) res += unidades[u];
+                }
+                return res.trim();
+            }
+
+            let letras = '';
+            if (entero === 0) {
+                letras = 'CERO';
+            } else {
+                const millones = Math.floor(entero / 1000000);
+                const miles = Math.floor((entero % 1000000) / 1000);
+                const resto = entero % 1000;
+                if (millones > 0) letras += (millones === 1 ? 'UN MILLON ' : tresDigitos(millones) + ' MILLONES ');
+                if (miles > 0) letras += (miles === 1 ? 'MIL ' : tresDigitos(miles) + ' MIL ');
+                if (resto > 0) letras += tresDigitos(resto);
+            }
+            const nombreMoneda = moneda === 'DOLARES' ? 'DÓLARES AMERICANOS' : 'SOLES';
+            return `${letras.trim()} CON ${centavosStr}/100 ${nombreMoneda}`;
+        }
+
+        function descargarPDFProfesional() {
+            if (cotizacion.length === 0) {
+                alert('Agrega al menos un producto a la cotización antes de descargar el PDF.');
+                return;
+            }
+
+            guardarClienteActual(false);
+
+            try {
+                if (!window.jspdf || !window.jspdf.jsPDF) {
+                    alert('No se pudo cargar el generador PDF. Verifica tu conexión a internet y recarga la página.');
+                    return;
+                }
+
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF({ unit: 'pt', format: 'a4', orientation: 'portrait' });
+
+                const emisorNombre = document.getElementById('inputRazonSocialEmisor').value.trim() || 'PAEZ HERRERA OSCAR HERNAN';
+                const emisorRuc = document.getElementById('inputRucEmisor').value.trim() || '15615084279';
+                const emisorTel = document.getElementById('inputTelEmisor').value.trim() || '968047414';
+                const numCot = formatearNumeroCotizacion(document.getElementById('inputNumeroCot').value.trim() || 'COT-00001');
+
+                const tipoDoc = document.getElementById('selectTipoDocCliente').value;
+                const numDoc = document.getElementById('inputDocCliente').value.trim() || '-';
+                const cliente = document.getElementById('inputCliente').value.trim() || 'CLIENTE OCASIONAL';
+                const direccion = document.getElementById('inputDireccionCliente').value.trim() || '-';
+                const atencion = document.getElementById('inputAtencionCliente').value.trim() || '-';
+                const telefono = document.getElementById('inputTelefono').value.trim() || '-';
+
+                const moneda = document.getElementById('selectMoneda').value;
+                const simbolo = moneda === 'DOLARES' ? '$' : 'S/';
+                const fechaHoy = new Date().toLocaleDateString('es-PE');
+                const formaPago = document.getElementById('inputFormaPago').value.trim() || 'TRANSFERENCIA';
+                const entrega = document.getElementById('inputTiempoEntrega').value.trim() || 'INMEDIATO';
+                const validez = document.getElementById('inputValidez').value.trim() || '3 DÍAS';
+
+                const marginX = 36;
+                const pageW = 595.28;
+                const contentW = pageW - marginX * 2;
+                const topY = 28;
+                const boxW = 175;
+                const boxX = pageW - marginX - boxW;
+                const leftColMaxW = boxX - marginX - 12;
+
+                const logoBase64 = obtenerLogoActivo();
+                let leftBottomY = topY + 56;
+
+                if (logoBase64) {
+                    try {
+                        const imgProps = doc.getImageProperties(logoBase64);
+                        const naturalW = imgProps.width || 640;
+                        const naturalH = imgProps.height || 168;
+                        const ratio = naturalW / naturalH;
+                        const imgFormat = logoBase64.startsWith('data:image/jpeg') ? 'JPEG' : (logoBase64.startsWith('data:image/webp') ? 'WEBP' : 'PNG');
+
+                        if (ratio >= 1.8) {
+                            const maxLogoW = 195;
+                            const maxLogoH = 50;
+                            let imgW = maxLogoW;
+                            let imgH = imgW / ratio;
+                            if (imgH > maxLogoH) {
+                                imgH = maxLogoH;
+                                imgW = imgH * ratio;
+                            }
+                            doc.addImage(logoBase64, imgFormat, marginX, topY, imgW, imgH);
+
+                            let textY = topY + imgH + 11;
+                            doc.setFont('helvetica', 'bold');
+                            doc.setFontSize(10);
+                            doc.setTextColor(15, 23, 42);
+                            const emisorLines = doc.splitTextToSize(emisorNombre.toUpperCase(), leftColMaxW);
+                            doc.text(emisorLines, marginX, textY);
+
+                            let ySub = textY + emisorLines.length * 11.5;
+                            doc.setFontSize(8.5);
+                            doc.setTextColor(217, 119, 6);
+                            doc.text('SUMINISTROS ELECTRIC OZ — MATERIALES ELÉCTRICOS', marginX, ySub);
+
+                            doc.setFont('helvetica', 'normal');
+                            doc.setFontSize(8.5);
+                            doc.setTextColor(71, 85, 105);
+                            doc.text(`Las Malvinas, Lima - Perú | Cel.: ${emisorTel}`, marginX, ySub + 11);
+
+                            leftBottomY = ySub + 18;
+                        } else {
+                            const maxBox = 52;
+                            let imgW = maxBox;
+                            let imgH = imgW / ratio;
+                            if (imgH > maxBox) {
+                                imgH = maxBox;
+                                imgW = imgH * ratio;
+                            }
+                            doc.addImage(logoBase64, imgFormat, marginX, topY + 2, imgW, imgH);
+
+                            const textStartX = marginX + imgW + 10;
+                            const textMaxW = boxX - textStartX - 10;
+                            let textY = topY + 10;
+
+                            doc.setFont('helvetica', 'bold');
+                            doc.setFontSize(12);
+                            doc.setTextColor(15, 23, 42);
+                            const emisorLines = doc.splitTextToSize(emisorNombre.toUpperCase(), textMaxW);
+                            doc.text(emisorLines, textStartX, textY);
+
+                            let ySub = textY + emisorLines.length * 13.5;
+                            doc.setFontSize(9.5);
+                            doc.setTextColor(217, 119, 6);
+                            doc.text('SUMINISTROS ELECTRIC OZ — MATERIALES ELÉCTRICOS', textStartX, ySub);
+
+                            doc.setFont('helvetica', 'normal');
+                            doc.setFontSize(8.5);
+                            doc.setTextColor(71, 85, 105);
+                            doc.text(`Las Malvinas, Lima - Perú | Cel.: ${emisorTel}`, textStartX, ySub + 12);
+
+                            leftBottomY = Math.max(topY + imgH + 6, ySub + 20);
+                        }
+                    } catch (e) {
+                        console.warn('No se pudo incrustar el logo:', e);
+                        leftBottomY = dibujarTextoEmisorSinLogo(doc, emisorNombre, emisorTel, marginX, topY, leftColMaxW);
+                    }
+                } else {
+                    leftBottomY = dibujarTextoEmisorSinLogo(doc, emisorNombre, emisorTel, marginX, topY, leftColMaxW);
+                }
+
+                const boxH = Math.max(66, leftBottomY - topY - 4);
+                const boxCenterY = topY + boxH / 2;
+                doc.setDrawColor(15, 23, 42);
+                doc.setLineWidth(1.2);
+                doc.roundedRect(boxX, topY, boxW, boxH, 4, 4);
+
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(9.5);
+                doc.setTextColor(15, 23, 42);
+                doc.text(`R.U.C. ${emisorRuc}`, boxX + boxW / 2, boxCenterY - 16, { align: 'center' });
+
+                doc.setFillColor(15, 23, 42);
+                doc.rect(boxX + 6, boxCenterY - 9, boxW - 12, 18, 'F');
+                doc.setTextColor(255, 255, 255);
+                doc.setFontSize(10);
+                doc.text('COTIZACIÓN', boxX + boxW / 2, boxCenterY + 3.5, { align: 'center' });
+
+                doc.setTextColor(217, 119, 6);
+                doc.setFontSize(11.5);
+                doc.text(`N° ${numCot}`, boxX + boxW / 2, boxCenterY + 23, { align: 'center' });
+
+                let y = Math.max(leftBottomY, topY + boxH + 6);
+                doc.setDrawColor(15, 23, 42);
+                doc.setLineWidth(1.5);
+                doc.line(marginX, y, pageW - marginX, y);
+                y += 12;
+
+                const leftBoxW = 292;
+                const rightBoxW = contentW - leftBoxW - 10;
+                const rightBoxX = marginX + leftBoxW + 10;
+
+                const clienteLines = doc.splitTextToSize(cliente, leftBoxW - 68);
+                const dirLines = doc.splitTextToSize(direccion, leftBoxW - 68);
+                const leftH = Math.max(88, 56 + (clienteLines.length + dirLines.length) * 11);
+
+                doc.setDrawColor(203, 213, 225);
+                doc.setLineWidth(0.8);
+                doc.roundedRect(marginX, y, leftBoxW, leftH, 3, 3);
+                doc.roundedRect(rightBoxX, y, rightBoxW, leftH, 3, 3);
+
+                doc.setFillColor(241, 245, 249);
+                doc.rect(marginX + 1, y + 1, leftBoxW - 2, 16, 'F');
+                doc.rect(rightBoxX + 1, y + 1, rightBoxW - 2, 16, 'F');
+
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(8.5);
+                doc.setTextColor(15, 23, 42);
+                doc.text('DATOS DEL CLIENTE', marginX + 6, y + 12);
+                doc.text('DATOS DE LA COTIZACIÓN', rightBoxX + 6, y + 12);
+
+                let cy = y + 28;
+                doc.setFontSize(8.5);
+                doc.setFont('helvetica', 'bold'); doc.text('Señores:', marginX + 6, cy);
+                doc.setFont('helvetica', 'normal'); doc.text(clienteLines, marginX + 58, cy);
+                cy += clienteLines.length * 11 + 2;
+
+                doc.setFont('helvetica', 'bold'); doc.text(`${tipoDoc}:`, marginX + 6, cy);
+                doc.setFont('helvetica', 'normal'); doc.text(numDoc, marginX + 58, cy);
+                cy += 12;
+
+                doc.setFont('helvetica', 'bold'); doc.text('Dirección:', marginX + 6, cy);
+                doc.setFont('helvetica', 'normal'); doc.text(dirLines, marginX + 58, cy);
+                cy += dirLines.length * 11 + 2;
+
+                doc.setFont('helvetica', 'bold'); doc.text('Atención:', marginX + 6, cy);
+                doc.setFont('helvetica', 'normal'); doc.text(`${atencion}   |   Tel: ${telefono}`, marginX + 58, cy);
+
+                let ry = y + 28;
+                const rRows = [
+                    ['Fecha:', fechaHoy],
+                    ['Moneda:', moneda],
+                    ['Forma pago:', formaPago],
+                    ['Entrega:', entrega],
+                    ['Validez:', validez],
+                    ['Vendedor:', 'OSCAR PAEZ']
+                ];
+                rRows.forEach(([lbl, val]) => {
+                    doc.setFont('helvetica', 'bold'); doc.text(lbl, rightBoxX + 6, ry);
+                    doc.setFont('helvetica', 'normal'); doc.text(String(val), rightBoxX + 66, ry);
+                    ry += 11.5;
+                });
+
+                y += leftH + 12;
+
+                const cols = [
+                    { label: 'ITEM', x: marginX, w: 30, align: 'center' },
+                    { label: 'CÓDIGO', x: marginX + 30, w: 72, align: 'left' },
+                    { label: 'DESCRIPCIÓN', x: marginX + 102, w: 233, align: 'left' },
+                    { label: 'UM', x: marginX + 335, w: 36, align: 'center' },
+                    { label: 'CANT.', x: marginX + 371, w: 44, align: 'right' },
+                    { label: 'P. UNIT.', x: marginX + 415, w: 52, align: 'right' },
+                    { label: 'TOTAL', x: marginX + 467, w: 56.28, align: 'right' }
+                ];
+
+                function dibujarCabeceraTabla(posY) {
+                    doc.setFillColor(15, 23, 42);
+                    doc.rect(marginX, posY, contentW, 20, 'F');
+                    doc.setTextColor(255, 255, 255);
+                    doc.setFont('helvetica', 'bold');
+                    doc.setFontSize(8);
+                    cols.forEach(col => {
+                        let tx = col.x + 4;
+                        if (col.align === 'center') tx = col.x + col.w / 2;
+                        if (col.align === 'right') tx = col.x + col.w - 4;
+                        doc.text(col.label, tx, posY + 13, { align: col.align });
+                    });
+                    return posY + 20;
+                }
+
+                y = dibujarCabeceraTabla(y);
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(8.2);
+                doc.setTextColor(30, 41, 59);
+
+                cotizacion.forEach((item, idx) => {
+                    const descLines = doc.splitTextToSize(String(item.nombre), cols[2].w - 8);
+                    const rowH = Math.max(18, descLines.length * 10.5 + 7);
+
+                    if (y + rowH > 760) {
+                        doc.addPage();
+                        y = 38;
+                        y = dibujarCabeceraTabla(y);
+                        doc.setFont('helvetica', 'normal');
+                        doc.setFontSize(8.2);
+                        doc.setTextColor(30, 41, 59);
+                    }
+
+                    if (idx % 2 === 1) {
+                        doc.setFillColor(248, 250, 252);
+                        doc.rect(marginX, y, contentW, rowH, 'F');
+                    }
+
+                    doc.setDrawColor(203, 213, 225);
+                    doc.setLineWidth(0.5);
+                    cols.forEach(col => doc.rect(col.x, y, col.w, rowH));
+
+                    const textY = y + 12;
+                    doc.text(String(idx + 1), cols[0].x + cols[0].w / 2, textY, { align: 'center' });
+                    doc.text(String(item.id).slice(0, 14), cols[1].x + 4, textY);
+                    doc.text(descLines, cols[2].x + 4, textY);
+                    doc.text(String(item.um), cols[3].x + cols[3].w / 2, textY, { align: 'center' });
+                    doc.text(String(item.cantidad), cols[4].x + cols[4].w - 4, textY, { align: 'right' });
+                    doc.text(item.precio.toFixed(2), cols[5].x + cols[5].w - 4, textY, { align: 'right' });
+                    doc.setFont('helvetica', 'bold');
+                    doc.text((item.cantidad * item.precio).toFixed(2), cols[6].x + cols[6].w - 4, textY, { align: 'right' });
+                    doc.setFont('helvetica', 'normal');
+
+                    y += rowH;
+                });
+
+                y += 12;
+                if (y + 75 > 800) {
+                    doc.addPage();
+                    y = 40;
+                }
+
+                const suma = cotizacion.reduce((acc, i) => acc + (i.cantidad * i.precio), 0);
+                const desglosar = document.getElementById('chkDesglosarIgv').checked;
+                const igv = desglosar ? suma * 0.18 : 0;
+                const total = suma + igv;
+
+                const montoLetras = convertirNumeroALetras(total, moneda);
+                const letrasLines = doc.splitTextToSize(`Son: ${montoLetras}`, 310);
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(8.5);
+                doc.setTextColor(15, 23, 42);
+                doc.text(letrasLines, marginX, y + 10);
+
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(8);
+                doc.setTextColor(71, 85, 105);
+                const obsY = y + 10 + letrasLines.length * 11 + 4;
+                doc.text('• Lugar de entrega: EN NUESTROS ALMACENES.', marginX, obsY);
+                doc.text('• Observaciones: LOS PRECIOS ESTÁN SUJETOS A VARIACIONES.', marginX, obsY + 11);
+                doc.text('• Gracias por su preferencia.', marginX, obsY + 22);
+
+                const totBoxW = 190;
+                const totBoxX = pageW - marginX - totBoxW;
+                let ty = y;
+
+                if (desglosar) {
+                    doc.setDrawColor(15, 23, 42);
+                    doc.rect(totBoxX, ty, totBoxW, 18);
+                    doc.setFont('helvetica', 'normal');
+                    doc.setFontSize(9);
+                    doc.setTextColor(30, 41, 59);
+                    doc.text('Subtotal:', totBoxX + 8, ty + 12);
+                    doc.setFont('helvetica', 'bold');
+                    doc.text(`${simbolo} ${suma.toFixed(2)}`, totBoxX + totBoxW - 8, ty + 12, { align: 'right' });
+                    ty += 18;
+
+                    doc.rect(totBoxX, ty, totBoxW, 18);
+                    doc.setFont('helvetica', 'normal');
+                    doc.text('IGV (18%):', totBoxX + 8, ty + 12);
+                    doc.setFont('helvetica', 'bold');
+                    doc.text(`${simbolo} ${igv.toFixed(2)}`, totBoxX + totBoxW - 8, ty + 12, { align: 'right' });
+                    ty += 18;
+                }
+
+                doc.setFillColor(15, 23, 42);
+                doc.rect(totBoxX, ty, totBoxW, 24, 'F');
+                doc.setTextColor(255, 255, 255);
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(10);
+                doc.text('TOTAL GENERAL:', totBoxX + 8, ty + 15);
+                doc.text(`${simbolo} ${total.toFixed(2)}`, totBoxX + totBoxW - 8, ty + 15, { align: 'right' });
+
+                const clienteArchivo = cliente.replace(/[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑ_-]+/g, '_').replace(/^_+|_+$/g, '') || 'CLIENTE';
+                const nombreArchivo = `Cotizacion-${numCot}-${clienteArchivo}.pdf`;
+
+                const pdfArrayBuffer = doc.output('arraybuffer');
+                const downloadBlob = new Blob([pdfArrayBuffer], { type: 'application/octet-stream' });
+                const blobUrl = URL.createObjectURL(downloadBlob);
+                const link = document.createElement('a');
+                link.href = blobUrl;
+                link.download = nombreArchivo;
+                link.style.display = 'none';
+                document.body.appendChild(link);
+                link.click();
+                setTimeout(() => {
+                    if (link.parentNode) document.body.removeChild(link);
+                    URL.revokeObjectURL(blobUrl);
+                }, 10000);
+
+                registrarYReiniciarCotizacion(numCot, cliente, tipoDoc, numDoc, direccion, atencion, telefono, moneda, formaPago, entrega, validez);
+            } catch (err) {
+                console.error('Error al generar PDF:', err);
+                alert('Ocurrió un error al generar el PDF: ' + err.message);
+            }
+        }
+
+        function formatearNumeroCotizacion(valor) {
+            const limpio = String(valor ?? '').trim().toUpperCase();
+            if (!limpio) return 'COT-00001';
+            const match = limpio.match(/^(?:COT[-\s]*)?(\d+)$/i);
+            if (match) {
+                const num = parseInt(match[1], 10);
+                if (!isNaN(num)) {
+                    const padLen = Math.max(5, match[1].length);
+                    return 'COT-' + String(num).padStart(padLen, '0');
+                }
+            }
+            return limpio.startsWith('COT-') ? limpio : ('COT-' + limpio);
+        }
+
+        function incrementarNumeroCotizacion(actual) {
+            const formateado = formatearNumeroCotizacion(actual || 'COT-00001');
+            const match = formateado.match(/^(COT-)(\d+)$/);
+            if (!match) return 'COT-00002';
+            const num = parseInt(match[2], 10) || 1;
+            const padLen = Math.max(5, match[2].length);
+            return 'COT-' + String(num + 1).padStart(padLen, '0');
+        }
+
+        let toastTimer = null;
+        function mostrarNotificacionFlotante(htmlMsg) {
+            const toast = document.getElementById('toastNotificacion');
+            const texto = document.getElementById('toastNotificacionTexto');
+            if (!toast || !texto) return;
+            texto.innerHTML = htmlMsg;
+            toast.classList.remove('hidden');
+            if (toastTimer) clearTimeout(toastTimer);
+            toastTimer = setTimeout(() => {
+                toast.classList.add('hidden');
+            }, 6000);
+        }
+
+        async function registrarYReiniciarCotizacion(numCot, cliente, tipoDoc, numDoc, direccion, atencion, telefono, moneda, formaPago, entrega, validez) {
+            const payload = {
+                numero: numCot,
+                fecha: new Date().toISOString(),
+                cliente: cliente || 'CLIENTE OCASIONAL',
+                tipoDoc,
+                numDoc: numDoc === '-' ? '' : numDoc,
+                direccion: direccion === '-' ? '' : direccion,
+                atencion: atencion === '-' ? '' : atencion,
+                telefono: telefono === '-' ? '' : telefono,
+                moneda,
+                formaPago,
+                entrega,
+                validez,
+                items: JSON.parse(JSON.stringify(cotizacion))
+            };
+
+            try {
+                if (!dbInstance) await abrirIndexedDB();
+                if (dbInstance) {
+                    const tx = dbInstance.transaction('cotizaciones', 'readwrite');
+                    tx.objectStore('cotizaciones').put(payload);
+                }
+            } catch (e) {
+                console.warn('No se pudo guardar historial local de cotización:', e);
+            }
+
+            enviarCambioAApi('GUARDAR_COTIZACION', payload);
+
+            cotizacion = [];
+            document.getElementById('chkDesglosarIgv').checked = false;
+
+            document.getElementById('selectTipoDocCliente').value = 'RUC';
+            limpiarDatosCliente();
+
+            document.getElementById('selectMoneda').value = 'SOLES';
+            document.getElementById('inputFormaPago').value = 'TRANSFERENCIA';
+            document.getElementById('inputTiempoEntrega').value = 'INMEDIATO';
+            document.getElementById('inputValidez').value = '3 DÍAS';
+
+            const siguienteCot = incrementarNumeroCotizacion(numCot);
+            document.getElementById('inputNumeroCot').value = siguienteCot;
+            localStorage.setItem('oz_siguiente_num_cot', siguienteCot);
+
+            sincronizarComprobanteSugerido();
+            actualizarCotizacion();
+
+            mostrarNotificacionFlotante(
+                `<strong>PDF N° ${escapeHtml(numCot)} listo para descargar.</strong><br>` +
+                `Formulario reiniciado a <em>Cliente Ocasional</em> (Siguiente: <strong>N° ${escapeHtml(siguienteCot)}</strong>).`
+            );
+        }
+
+        function generarMensajeWhatsApp() {
+            if (cotizacion.length === 0) {
+                alert('Agrega al menos un producto a la cotización.');
+                return;
+            }
+
+            guardarClienteActual(false);
+
+            const numCot = formatearNumeroCotizacion(document.getElementById('inputNumeroCot').value || 'COT-00001');
+            const tipoDoc = document.getElementById('selectTipoDocCliente').value;
+            const numDoc = document.getElementById('inputDocCliente').value.trim();
+            const cliente = document.getElementById('inputCliente').value.trim() || 'Cliente';
+            const simbolo = document.getElementById('selectMoneda').value === 'DOLARES' ? '$' : 'S/';
+
+            let msg = `*COTIZACIÓN N° ${numCot} — SUMINISTROS ELECTRIC OZ*\n`;
+            msg += `▪️ *Cliente:* ${cliente}${numDoc ? ` (${tipoDoc}: ${numDoc})` : ''}\n\n`;
+            msg += `*Detalle:*\n`;
+            cotizacion.forEach((i, idx) => {
+                msg += `${idx + 1}. *${i.cantidad} ${i.um}* — ${i.nombre} | P.U.: ${simbolo} ${i.precio.toFixed(2)} | Sub: *${simbolo} ${(i.cantidad * i.precio).toFixed(2)}*\n`;
+            });
+            const suma = cotizacion.reduce((acc, i) => acc + (i.cantidad * i.precio), 0);
+            const total = document.getElementById('chkDesglosarIgv').checked ? suma * 1.18 : suma;
+            msg += `\n*TOTAL GENERAL: ${simbolo} ${total.toFixed(2)}*\nQuedo atento a su confirmación.`;
+
+            window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
+        }
+
+        async function guardarCotizacionEnApi() {
+            if (cotizacion.length === 0) {
+                alert('No hay productos en la cotización para guardar.');
+                return;
+            }
+
+            await guardarClienteActual(false);
+
+            const payload = {
+                numero: formatearNumeroCotizacion(document.getElementById('inputNumeroCot').value),
+                fecha: new Date().toISOString(),
+                cliente: document.getElementById('inputCliente').value || 'CLIENTE OCASIONAL',
+                tipoDoc: document.getElementById('selectTipoDocCliente').value,
+                numDoc: document.getElementById('inputDocCliente').value,
+                direccion: document.getElementById('inputDireccionCliente').value,
+                atencion: document.getElementById('inputAtencionCliente').value,
+                telefono: document.getElementById('inputTelefono').value,
+                moneda: document.getElementById('selectMoneda').value,
+                formaPago: document.getElementById('inputFormaPago').value,
+                entrega: document.getElementById('inputTiempoEntrega').value,
+                validez: document.getElementById('inputValidez').value,
+                items: cotizacion
+            };
+
+            if (!dbInstance) await abrirIndexedDB();
+            if (dbInstance) {
+                const tx = dbInstance.transaction('cotizaciones', 'readwrite');
+                tx.objectStore('cotizaciones').put(payload);
+            }
+
+            const res = await enviarCambioAApi('GUARDAR_COTIZACION', payload);
+            alert(res.localOnly
+                ? `✅ Cotización N° ${payload.numero} y datos del cliente guardados en Base de Datos Local.`
+                : `✅ Cotización N° ${payload.numero} y cliente guardados en BD Local y sincronizados con la API.`);
+        }
+
+        // =========================================================================
+        // 9. MODAL API, SUNAT Y UTILIDADES
+        // =========================================================================
+        function abrirModalApi() {
+            document.getElementById('inputApiUrl').value = localStorage.getItem('oz_api_url') || '';
+            document.getElementById('inputApiToken').value = localStorage.getItem('oz_api_token') || '';
+            document.getElementById('inputSunatApiUrl').value = localStorage.getItem('oz_sunat_api_url') || '';
+            document.getElementById('selectEntornoSunat').value = localStorage.getItem('oz_sunat_entorno') || 'BETA';
+            document.getElementById('modalApi').classList.remove('hidden');
+            document.getElementById('modalApi').classList.add('flex');
+        }
+
+        function cerrarModalApi() {
+            document.getElementById('modalApi').classList.add('hidden');
+            document.getElementById('modalApi').classList.remove('flex');
+        }
+
+        async function guardarConfigApi() {
+            const url = document.getElementById('inputApiUrl').value.trim();
+            const token = document.getElementById('inputApiToken').value.trim();
+            const sunatUrl = document.getElementById('inputSunatApiUrl').value.trim();
+            const entornoSunat = document.getElementById('selectEntornoSunat').value || 'BETA';
+
+            if (url && url.endsWith('/dev')) {
+                alert('⚠️ Estás usando la URL de prueba (/dev). Debes copiar la URL de implementación pública que termina en /exec.');
+                return;
+            }
+            localStorage.setItem('oz_api_url', url);
+            localStorage.setItem('oz_api_token', token);
+            localStorage.setItem('oz_sunat_api_url', sunatUrl);
+            localStorage.setItem('oz_sunat_entorno', entornoSunat);
+
+            actualizarBadgeApi();
+            actualizarBadgeSunat();
+            actualizarEstadoLogoUI();
+            cerrarModalApi();
+            if (url) {
+                await sincronizarDesdeApi(false);
+            }
+        }
+
+        function actualizarBadgeSunat() {
+            const sunatUrl = (localStorage.getItem('oz_sunat_api_url') || '').trim();
+            const entorno = localStorage.getItem('oz_sunat_entorno') || 'BETA';
+            const el = document.getElementById('textoEstadoSunat');
+            if (!el) return;
+            el.innerText = sunatUrl ? `SUNAT: ${entorno}` : 'SUNAT: Sin URL';
+        }
+
+        async function sincronizarDesdeApi(silencioso = false) {
+            const inputEl = document.getElementById('inputApiUrl');
+            const url = (inputEl && inputEl.value.trim()) || (localStorage.getItem('oz_api_url') || '').trim();
+            if (!url) {
+                if (!silencioso) alert('Ingresa primero la URL del endpoint API.');
+                return;
+            }
+            if (url.endsWith('/dev')) {
+                if (!silencioso) alert('⚠️ Esa URL termina en /dev (prueba). Pega la URL pública que termina en /exec.');
+                return;
+            }
+            if (inputEl && inputEl.value.trim()) {
+                localStorage.setItem('oz_api_url', url);
+                actualizarBadgeApi();
+            }
+
+            const btnCargar = document.querySelector('button[onclick="sincronizarDesdeApi(false)"]');
+            const textoOriginalBtn = btnCargar ? btnCargar.innerHTML : '';
+            if (btnCargar && !silencioso) {
+                btnCargar.disabled = true;
+                btnCargar.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i> Cargando...';
+            }
+
+            try {
+                const sep = url.includes('?') ? '&' : '?';
+                const res = await fetch(url + sep + 't=' + Date.now(), { redirect: 'follow' });
+                const texto = await res.text();
+                let data;
+                try {
+                    data = JSON.parse(texto);
+                } catch (parseErr) {
+                    throw new Error('La API no devolvió JSON (revisa que en Apps Script el acceso esté en "Cualquier persona").');
+                }
+
+                if (data && data.status === 'error') {
+                    throw new Error(data.message || 'Error interno en Google Apps Script');
+                }
+
+                const lista = Array.isArray(data) ? data : (data.productos || []);
+                const clientesNube = !Array.isArray(data) && Array.isArray(data.clientes) ? data.clientes : [];
+                const ultimoCot = !Array.isArray(data) ? data.ultimoNumeroCot : null;
+
+                const huellaNueva = calcularHuellaCatalogo(lista, ultimoCot, clientesNube.length);
+                const huellaAnterior = localStorage.getItem('oz_huella_catalogo') || '';
+                const huboCambiosReales = !silencioso || (huellaNueva !== huellaAnterior) || Boolean(data && data.version);
+
+                if (data && data.version) {
+                    localStorage.setItem('oz_ultima_version_nube', String(data.version));
+                }
+                if (lista.length > 0) {
+                    localStorage.setItem('oz_huella_catalogo', huellaNueva);
+                }
+
+                if (lista.length > 0 && huboCambiosReales) {
+                    localStorage.removeItem('oz_catalogo_vaciado');
+                    const marcaSeleccionada = document.getElementById('filtroMarca').value;
+                    catalogo = lista.map(normalizarProducto);
+                    await guardarCatalogoCompletoEnDB(catalogo);
+                    actualizarFiltrosMarca();
+                    if (marcaSeleccionada) {
+                        document.getElementById('filtroMarca').value = marcaSeleccionada;
+                    }
+                    if (!silencioso) paginaActual = 1;
+                    filtrarProductos();
+                }
+
+                if (clientesNube.length > 0) {
+                    clientesNube.forEach(cn => {
+                        const key = cn.numDoc ? `DOC_${cn.numDoc}` : `NOM_${String(cn.nombre || '').toUpperCase()}`;
+                        if (!key || key === 'NOM_') return;
+                        const obj = { ...cn, key };
+                        const idx = clientesGuardados.findIndex(c => c.key === key);
+                        if (idx >= 0) clientesGuardados[idx] = obj;
+                        else clientesGuardados.push(obj);
+                    });
+                    localStorage.setItem('oz_clientes_backup', JSON.stringify(clientesGuardados));
+                    actualizarContadorClientes();
+                }
+
+                if (ultimoCot) {
+                    const siguiente = incrementarNumeroCotizacion(ultimoCot);
+                    const inputCot = document.getElementById('inputNumeroCot');
+                    if (inputCot && document.activeElement !== inputCot) {
+                        inputCot.value = siguiente;
+                    }
+                    localStorage.setItem('oz_siguiente_num_cot', siguiente);
+                }
+
+                if (!silencioso) {
+                    if (lista.length === 0) {
+                        alert('⚠️ La conexión funcionó, pero tu hoja de Google Sheets tiene 0 productos.');
+                    } else {
+                        cerrarModalApi();
+                        alert(`✅ Sincronización exitosa: ${lista.length.toLocaleString()} productos cargados desde la nube.`);
+                    }
+                } else if (lista.length > 0 && huboCambiosReales) {
+                    mostrarNotificacionFlotante(`<strong>🔄 Actualizado automáticamente</strong> (${lista.length.toLocaleString()} productos al día).`);
+                }
+            } catch (e) {
+                if (!silencioso) alert('❌ No se pudo cargar desde la API: ' + e.message);
+                else console.warn('Sincronización automática en segundo plano omitida:', e.message);
+            } finally {
+                if (btnCargar && !silencioso) {
+                    btnCargar.disabled = false;
+                    btnCargar.innerHTML = textoOriginalBtn;
+                }
+            }
+        }
+
+        function calcularHuellaCatalogo(lista, ultimoCot, totalClientes) {
+            if (!Array.isArray(lista) || lista.length === 0) return `0|${ultimoCot || ''}|${totalClientes || 0}`;
+            let sumaPrecios = 0;
+            let sumaCompras = 0;
+            for (let i = 0; i < lista.length; i++) {
+                sumaPrecios += (parseFloat(lista[i].precio2 ?? lista[i].P2 ?? 0) || 0);
+                sumaCompras += (parseFloat(lista[i].compra ?? lista[i]['P. compra'] ?? 0) || 0);
+            }
+            const primero = lista[0] ? `${lista[0].id}:${lista[0].nombre}` : '';
+            const ultimo = lista[lista.length - 1] ? `${lista[lista.length - 1].id}:${lista[lista.length - 1].nombre}` : '';
+            return `${lista.length}|${sumaPrecios.toFixed(2)}|${sumaCompras.toFixed(2)}|${primero}|${ultimo}|${ultimoCot || ''}|${totalClientes || 0}`;
+        }
+
+        let verificandoCambios = false;
+        async function verificarCambiosEnNube() {
+            if (verificandoCambios) return;
+            if (document.visibilityState === 'hidden') return;
+            if (localStorage.getItem('oz_catalogo_vaciado') === '1') return;
+
+            const url = (localStorage.getItem('oz_api_url') || '').trim();
+            if (!url || url.endsWith('/dev')) return;
+
+            verificandoCambios = true;
+            try {
+                const sep = url.includes('?') ? '&' : '?';
+                const res = await fetch(url + sep + 'modo=version&t=' + Date.now(), { redirect: 'follow' });
+                const texto = await res.text();
+                const data = JSON.parse(texto);
+
+                if (!data || data.status === 'error') return;
+
+                if (data.version && !Array.isArray(data.productos)) {
+                    const versionLocal = localStorage.getItem('oz_ultima_version_nube') || '';
+                    if (String(data.version) !== versionLocal) {
+                        await sincronizarDesdeApi(true);
+                    } else if (data.ultimoNumeroCot) {
+                        const siguiente = incrementarNumeroCotizacion(data.ultimoNumeroCot);
+                        const inputCot = document.getElementById('inputNumeroCot');
+                        if (inputCot && document.activeElement !== inputCot && inputCot.value !== siguiente) {
+                            inputCot.value = siguiente;
+                            localStorage.setItem('oz_siguiente_num_cot', siguiente);
+                        }
+                    }
+                    return;
+                }
+
+                const lista = Array.isArray(data) ? data : (data.productos || []);
+                const clientesNube = !Array.isArray(data) && Array.isArray(data.clientes) ? data.clientes : [];
+                const ultimoCot = !Array.isArray(data) ? data.ultimoNumeroCot : null;
+                const huellaNueva = calcularHuellaCatalogo(lista, ultimoCot, clientesNube.length);
+                const huellaAnterior = localStorage.getItem('oz_huella_catalogo') || '';
+
+                if (lista.length > 0 && huellaNueva !== huellaAnterior) {
+                    localStorage.setItem('oz_huella_catalogo', huellaNueva);
+                    const marcaSeleccionada = document.getElementById('filtroMarca').value;
+                    catalogo = lista.map(normalizarProducto);
+                    await guardarCatalogoCompletoEnDB(catalogo);
+                    actualizarFiltrosMarca();
+                    if (marcaSeleccionada) {
+                        document.getElementById('filtroMarca').value = marcaSeleccionada;
+                    }
+                    filtrarProductos();
+
+                    if (ultimoCot) {
+                        const siguiente = incrementarNumeroCotizacion(ultimoCot);
+                        const inputCot = document.getElementById('inputNumeroCot');
+                        if (inputCot && document.activeElement !== inputCot) {
+                            inputCot.value = siguiente;
+                        }
+                        localStorage.setItem('oz_siguiente_num_cot', siguiente);
+                    }
+                    mostrarNotificacionFlotante(`<strong>🔄 Cambios detectados y actualizados</strong> (${lista.length.toLocaleString()} productos al día).`);
+                }
+            } catch (e) {
+            } finally {
+                verificandoCambios = false;
+            }
+        }
+
+        function actualizarBadgeApi() {
+            const url = localStorage.getItem('oz_api_url');
+            const texto = document.getElementById('textoEstadoApi');
+            texto.innerText = url ? 'Auto-Sync Nube Activo' : 'BD Local Activa';
+        }
+
+        function escapeHtml(str) {
+            return String(str ?? '').replace(/[&<>"']/g, m => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            }[m]));
+        }
+
+        const DEFAULT_LOGO_BASE64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAoAAAACoCAMAAABHc69jAAAAwFBMVEX//////v/+///+/v/9/v/7//////7+//7//v7+/v79/v7///3+/v39/v3+/vz+/vf//f/+/f7//P/8/f7+/f39/f37/P39/fz9/fb7+v37+vTs8PPZ29n6sB77rx7nvWW1vci2pYN1f49XYXE9Sl8rOE0cLksVLU0ULE4TLEsXKkwVKk0UKk8UK00UK0sTK08TK00TKk0TKkwTKkoSKk4SKkwRK00SKkoWKEkUKEsTKEwRKEoSIz8OIj8OHjoJHDgYxC6qAACGdUlEQVR42tW9h2Kj2NI1SlLYCGEQIEzbM+ORbCUkFJAMyu//VrdWgaKV7O4533+Zabdbgbh25VolSV83IYT0zS3/ijjeruzv+B/572efv/A1cfGcrr964Sxun7249q2zc394357YX8J3T+f8YPdu9vktvn6Ye+fx5dKPP3vlWxfO5jtXJ/1HALyxvy9PV/yXABQ/wd+DABQ3d3oRgI/f2utfuQxAcf/5iW8BUPwIgNL/FQCl/wMASo8AUPwUgMc/r33y0t5uA/AHElB8ffmLzHkEgPfP4osgfQiA0p8GoPRt/N3VGne+9lsHvQaTbx7/oev/wcWdP1bpt7f9/n50s799X8Xjj/67WPkPzvfn9+S3TugCAP+zRyL+B195cH//EwD+R5f5n5z47wDwD96o//IcfrLj/xiAv7938SdE83dP5O7nz1zZi2rzko1weE2c/iqdGs0Pe6jn1lD+2+H7X57ItQdz/tKVT4rjN8Tx9X85iYuy++SU92d7w+C+eNqHI12PNJyd/lVL+YFnLZ0/60v37yET+kFYPeDHnVzaJevgJgDPbGRx09m8qEn5pyekL95Bvv/dBz3xoAN89kjvAvD4sV9YUVeCSOLqdjESdf1T4vyBXd35ZSfiUTlJb3rehQM/JMofeKx/AIAXYgFXJeBDbthjZ/pYDOOaAPyG/3vboDyTPpck4EMA/F4M6ER5/ACAX52y2zflbIFkmLytBu9GUf9DCfh18auqeva2otJ/p1rze7L6XvRUXFrr6sNOGX9aiLK4HYwQRxJQvWvZiesI/C4Av0Sr9qej4O+6c75j9dbCvw/Ai9Gx+/fxvwLgNzelUqnIcrFoliplGZukyEaFfpcURbkkTh4TT9+yY01H102zLNvlh+1gQymowpAVrVS8JgGzX4p0GYphFPcXc/M5frU+/oiTIhPGqqZqy4ZfVxUtCOqe72h0r2knRsUoSkqpVCzyv78VYrgUbPxe6Oq/9bAf2op85RWzSji0GYDlolFk/P0GAL9133zbcYKgXLNrDwOw4mt6PbDVulm6CUDZKJM8Fy6J9Z8BUPwhAKq6bteCQJLq+IHN8z3H8wU9AINutl6pFP8HAJT+rwF4bgPxNRPqiiVNk0SF1qEQmqYpqvblO98T6o8+bJwD4Y/+bXuO/dDZ44fp+wV6IfAr0hcv8NjmslzLsmzLLD4UzvzitIs/E7+Q6aaqds3xlNdGs9lsNN5eXxiGXkAiUbaw2gmAkvLd0Jg4Vbm3dfWZUfV/CMDDMypWDppWdXx6rLQsHb1umoYqZyrie1bCN3yJ/QeBv9e3V6XiO4/uXyUxUn99e5E8R71sCu72DQBapmlWzO+d+Z3U1+Vs2rXPW4apWbVaIL21tpv1ZrtZtd6bjbe3lwJLQtXWSD5XSkdmwg9u4wMZ4/OT/02BKX6k6U9unQEA0g0isLm+t/+MQUAkdUzGyYUrE5ePJYR3vTTg5q3zPKfxkbYaL1VfPHqnA+ul2Vq9v0mOKF7UQrsPurYjHMOsVEoP5PovFASJW59/DIAkh4WuW8BfugrbYb/X66UEwzWjkEDokF9Ci52k4Fmg4o4JIN1zr88/eX7y92XKnXfFtQiSdBbau7Sw+K+ipGnCcF0b6Ht5fX2j7fX1BUvR8ypH0Tzpwkmf7ev8Jhyrs1sPvi69bTbL1bYh1R8FoGc7jW2abluvkl+8IN0PH9Z1xSHhrqmyeuGxiLvhiPN4ySMC50sQ1VK1qunLr+/rdhJOwnDe67Xb/XC53m5X7423QkG32AAsntkCl4pmbsa7rhSVfI1JfUep3YDjtRIkcSkYcXmxK5pG8i6QpZe3xvtHK12t0tYH3ZTXQNIC7ziotH+2FzTRnZsgbsbaPKWxbX+21+8vkrghbE6+Ir98rDvzlEAbSDfPRy/JsuVoTq0m37T7fgOA4i4AbUc1nvygsRkt41GnMxxOou4k7GEjEK4aL77nWkJ8TcXcAaCQHloOxwB8SF1fM0kuRTBPnIrrav/a3VMUVa36AcHvfUWmyXIex8lyvSYjpUkWFplanvBOMxkPZA6u1zxdAWBzG30mtwF49hXp9WM5TwFA/zY6NJtswHrgB09l6cGdixvx4O9kho5MVtKygdRYpcPpeJhtYRiF6RyysE9XUa97LiTltQqzB3MZ37rtX+2NBx+s+KIEr3tl9wBINqAn9Lr02tys0xaZJsvVahm32+1euiEL6yUIMsvukgj+YvPdfSxXNrKNtqsFPQbHfwCA/KJnBE1SwavN20FtXwGgWvTdzLB99HyuRA5+A4Be2aWL/Eg7cdgLR8PpaIC/Z5PJIIzTtJeuyPrwdF2YVwEo/T8KwO94Mpcc8GKl4nq4N9tJv7fcQP1+fNBzXaUhQRAKzisJ6eFkgLgTCbysXhznpbnZbN5fVe9h8URr5n21apHouJpNy/5N7m8xeGs0Gm+OpFw5mUs38uoCeviuH5+L+Sy9vK/jJA5Hg9FgMBiNRiwHZ6POaNYZpi1aSA4D8PEgzDcLCe6r3bOi4/MaFHHFNfoOAL/e2aLs+dJbaxN10tUH+WSvr3BEGs0WJOLmXynwbZ2PSw9PQdC6eHqKRhUbeTEGmfvVLJRVMoyiYRjlYrEM365UKnFQm75bEZUK/aQ/kqJm56MipqIQREjj14uyXObUhaLpVV03TNMQatk1rDLtTycRIWjXHDx3YTW8vakCmC0VkcKhN8qIYZJTRd+ybPqYZdm+KSSSlpttM6jYHHbnuCdic9ifRva/m12Uvotdwx01TdMty+UyruJwvXSyUvZvYZhZ5kLG7oq4OUrx5PZIwrIMwxKqbdVsMgEaq7DT6U0IehkAR9MhicLO7JNMwv7q41Wqy7YkckNVaP8hAKVHAHjqQ9w6xneqqb8Atihsr/TyvmlFq4/Ga2H/OjySzfb9peTZoqRoIgvkKtVKRZIP+6PnQRghpJgZAEWW+FJM3ipl4I8AWEGEiwBYKVoEQNroTUKKmgPQ8LNANLkTJgGwUsEubIKbVuQPGqZhufRblaAlCJL0yUrlyQ0yMwBOcIWziEXClJoBkL5m1WR6mew/7Li5bW2ajuEpEu1eUmRZoT+iUFAtAiCdaVGhy9J0R3BUXkZ+kg5EOyXg86IC1lTaEDmt8Cdwfey3yvQfPqMo9FblOCZEADStoqbW3BoMwN5wRIo3A9/J1iEorpsvRaemlYTIwq+4O98A4O9HaC86jccA/G/yKqbp0L3ZkvP78SZJBRjrXr1er2rA4Adp4AAFZwruM25MRTkNb1lkNdNjobcgHlSEE+mDqtCrWrblUW6ghh66ZKtaIUMIvibx4xKG4ExcYEsOp8sgI4sGASjLjQqd98P2kSrMzJIrGkXbCXyyXwVOK3vu2DftjQWzEFVF1yuEElnVAMBts645Chsd9OkSgc4iaNRcAE1SCkrZNDRIaTpmmZAFkGo6XwCJYzVP02LP2VIs0KbqvM4UpWqyCKRTP3noKrl4ijDKpo8I9CqcTqPoAv5o+xz0Vo3A8R1dL0l8Oee1kz8GoHiwweWB/rz/AoQEQDJOVj0YIUHdsW3oTK1aMeuBJr2+CH1f8Vh0ZY6VHgfrXctWbfIyGXMkcyyZF71tyWrVKRQcTSkVWXiYFeg1kgk1p+Doms7Qze40AKhYtmz59IP3TkLKINPUIizbNqlShzYIP8Msq2Jf2CIXDdd3LRJlhCg+qZJeQETJ912H9m9XCSIa7UpVCwTANqlg31O5+oL0JEll0umi5puMnYKmuL5JR6+YhqLJBioyZJKItAuYHrS0ypX906R7UFIIm47j+ybjUQDWXx+8riPIrxpmUH5937THCwJgdAmAn0myIAQWAlfHdyBKDfGHJOD/2wBUTZMW56bX2zS0gB4dYUBSFbVadSGUpIpHEoU0TFEhs06U5ZMKBTof06g6OiGQNW3RMG1Wyb5luZ5fos+pLj0iKG1SwvRVQYjh7J5Pit2wcgDSw9NE2XXpOwrJIAIsyb+qQTsqkU51XCtTtZ6QyWXfP2lNlXzHtQkbZKgVYduRDefR4bBHmaDhP7GxJxPOqjsAkoSpVrnkRpGMcrla9Z/IQlRUveqxtSCppHklTaZ/6J6HU1aE7xtFwjPbrbunSZ/yPUYzWRCuzW9X5Ly04/DcGYAk0KuIAPaWSRiOu3sJeCwKu924359DBrhk45ZgrWQy/U+o4Ou1298H4B9HIGlRaOB2uHor/iJlxFpPkS27ZpM0JAdEMkxJtkjCkBpEQQkt/qPqE0PTCgVJBQBk2O0aAFRzn58hVYIXzrf7vkePs1rSfV86vKrVfXd3m8k18ViDVSsllpgVFeFxMs7Yw9DwFaDesV1BmM10INSbRoqQtCPBhfZkinqdXi+8vGRHKD49E9zJrqdzLjQ3/XWzwHsl40IjiS1BxWqQfZrDR6GvoSbDMGVVtj19d2Au1vFcH0LZUPEMipZsPmEVBDgUm830NgHQyuyHAzrgfME4qSswADvdKJwOO5cAmMS9xXS4JkckIJVOd1vNvZn/XwPwS43kxYCVbSvNbWfZepWe4HHCzjZJptUsm7wEkoewueAnNxuNxovqCiNP6uOifOm12Wg23yS/6rpkD9XpM803NajCh2k235vwqhUp8NxqVQ/Ys0EtCIpBAsmvqx48SfY+BOIkjZciPUhh2cUX/OtVCVQJAZTmO+/pBZkZw/R9loNkOTTo4G9KYJVpJZDECyTnlQ9LH6cjvJDDQeAPGjjzj+V0+dHItmYjkG1VdaXsKBLZGtnp/ksy1dFIrdsB4fiNT5X3RMvlyYe6dehmiKDm6FJwONQbfUCqO57rlmEsV/aPuUgnSjaJxwZge9jt9sL+sL8D3jEAJ/0wnMza5PRJARkFgmzlh+slxDecjzu97X+44PRL0OpyiFWtZwAs+iTk4ObB0TRcG1JIJw1WlfBAGtsV510JgJX9VxFApo00h26Yum457/SphqCH10zxxnaz3ZBvLXkx+c761Gmq+27632132+03yS/60Hlt3W232+2K6r627rX/73Y77XZX/F+62/v93W339/sV67vZbvf77f5+u35vv9/v9/f2/fV+v/z/932322232/3+/7/7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/wH7/
